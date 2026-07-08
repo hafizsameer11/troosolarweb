@@ -4369,19 +4369,24 @@ const BuyNowFlow = () => {
             ?? 0
         );
         const installationFee = installerIsTroosolar ? categoryInstallation : 0;
-        // Inspection applies for both TrooSolar and Own Installer (per category).
-        const inspectionFee = Number(
+        const categoryInspection = Number(
             checkoutSettings?.category_inspection_fees?.[categoryKey] ?? 0
         );
+        // TrooSolar: always. Own Installer: only with "Include Cost of Installation Materials".
+        const includeMaterialsOptIn = buyNowMaterialFeeApplies(
+            formData.installerChoice,
+            formData.includeInstallationMaterial
+        );
+        const inspectionFee = installerIsTroosolar
+            ? categoryInspection
+            : (includeMaterialsOptIn ? categoryInspection : 0);
         const categoryMaterials = Number(
             checkoutSettings?.category_materials_fees?.[categoryKey]
             ?? checkoutSettings?.installation_materials_cost
             ?? checkoutSettings?.installation_material_cost
             ?? 0
         );
-        const materialCost = buyNowMaterialFeeApplies(formData.installerChoice, formData.includeInstallationMaterial)
-            ? categoryMaterials
-            : 0;
+        const materialCost = includeMaterialsOptIn ? categoryMaterials : 0;
 
         return { deliveryFee, installationFee, inspectionFee, materialCost };
     };
