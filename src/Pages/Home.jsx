@@ -461,7 +461,7 @@ const Home = () => {
                 </div>
                 <div>
                   <h1 className="text-md lg:text-2xl">
-                    Hi,{" "}
+                    Hi{" "},{" "}
                     <span className="sm:text-[#273e8e] text-black">
                       {firstName}
                     </span>

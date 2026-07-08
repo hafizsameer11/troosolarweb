@@ -372,12 +372,11 @@ const pickCheckoutFee = (apiAmount, bundleAmount, fallbackAmount) => {
     return Number(fallbackAmount || 0);
 };
 
-/** Prefer explicit bundle invoice-tab fee; never use global fallback for bundles. */
+/** Prefer explicit bundle invoice-tab fee; never use global/API fallback for bundles. */
 const pickBundleScopedFee = (apiAmount, bundleAmount, fallbackAmount, bundleFeesOnly) => {
     if (bundleFeesOnly) {
-        const bundle = Number(bundleAmount || 0);
-        if (bundle > 0) return bundle;
-        return Number(apiAmount || 0);
+        // Bundles: Invoice fees tab only. Missing fee => 0 (do not reuse checkout/API defaults).
+        return Number(bundleAmount || 0);
     }
     return pickCheckoutFee(apiAmount, bundleAmount, fallbackAmount);
 };
@@ -4355,7 +4354,7 @@ const BuyNowFlow = () => {
         const productsTotal = formData.selectedProducts.reduce((sum, p) => sum + (p.price * (p.quantity || 1)), 0);
         const itemsSubtotal = bundlesTotal + productsTotal;
         const basePrice = itemsSubtotal > 0 ? itemsSubtotal : formData.selectedProductPrice;
-        const feeFallback = formData.selectedBundles.length > 0
+        const feeFallback = ((formData.selectedBundles || []).length > 0 || formData.selectedBundle || formData.selectedBundleId)
             ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
             : (resolvedFees || getBuyNowStateFeeFallback());
 
@@ -4430,7 +4429,9 @@ const BuyNowFlow = () => {
         const details = detailsOverride || invoiceDetails;
         const vatPercent = Number(details?.vat_percentage || checkoutSettings?.vat_percentage || 7.5);
         const insurancePercent = resolveCheckoutInsurancePercent(checkoutSettings, details);
-        const hasBundles = (formData.selectedBundles || []).length > 0;
+        const hasBundles = (formData.selectedBundles || []).length > 0
+            || !!formData.selectedBundle
+            || !!formData.selectedBundleId;
         // Bundles: fees only from Bundle Mgt → Invoice fees. Never state/global checkout fallback.
         const stateFeeFallback = hasBundles
             ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
@@ -4488,6 +4489,9 @@ const BuyNowFlow = () => {
             pricingDetails.installation_fee = Number(bundleServiceFees.installationFee || 0);
             pricingDetails.inspection_fee = Number(bundleServiceFees.inspectionFee || 0);
             pricingDetails.material_cost = Number(bundleServiceFees.materialCost || 0);
+            // Drop any prior checkout fee fields that may still be on invoiceDetails.
+            delete pricingDetails.deliveryFee;
+            delete pricingDetails.default_delivery_fee;
         }
 
         const invoiceTotals = computeBuyNowInvoiceTotals({
