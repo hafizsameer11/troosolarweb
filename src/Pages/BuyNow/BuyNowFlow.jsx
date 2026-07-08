@@ -4355,28 +4355,35 @@ const BuyNowFlow = () => {
 
     const getBuyNowCheckoutFeeFallback = () => {
         const selectedState = states.find((s) => s.id === formData.stateId);
+        const categoryKey = formData.productCategory || '';
         const deliveryFee = resolveFlowDeliveryFee({
-            productCategory: formData.productCategory,
+            productCategory: categoryKey,
             categoryDeliveryFees: checkoutSettings?.category_delivery_fees,
             defaultDeliveryFee: checkoutSettings?.delivery_fee,
             stateDeliveryFee: selectedState?.default_delivery_fee,
         });
         const installerIsTroosolar = (formData.installerChoice || 'troosolar') !== 'own';
-        const installationFee = installerIsTroosolar
-            ? Number(checkoutSettings?.installation_flat_addon || 0)
-            : 0;
-        // Support both current and legacy response key shapes from /config/checkout-settings
-        const materialsFromSettings = Number(
-            checkoutSettings?.installation_materials_cost
+        const categoryInstallation = Number(
+            checkoutSettings?.category_installation_fees?.[categoryKey]
+            ?? checkoutSettings?.installation_flat_addon
+            ?? 0
+        );
+        const installationFee = installerIsTroosolar ? categoryInstallation : 0;
+        const categoryInspection = Number(
+            checkoutSettings?.category_inspection_fees?.[categoryKey] ?? 0
+        );
+        const inspectionFee = installerIsTroosolar ? categoryInspection : 0;
+        const categoryMaterials = Number(
+            checkoutSettings?.category_materials_fees?.[categoryKey]
+            ?? checkoutSettings?.installation_materials_cost
             ?? checkoutSettings?.installation_material_cost
-            ?? checkoutSettings?.material_cost
             ?? 0
         );
         const materialCost = buyNowMaterialFeeApplies(formData.installerChoice, formData.includeInstallationMaterial)
-            ? materialsFromSettings
+            ? categoryMaterials
             : 0;
 
-        return { deliveryFee, installationFee, inspectionFee: 0, materialCost };
+        return { deliveryFee, installationFee, inspectionFee, materialCost };
     };
 
     const getBuyNowBundleServiceFees = () => {
@@ -4536,10 +4543,10 @@ const BuyNowFlow = () => {
             pricingDetails.inspection_fee = Number(bundleServiceFees.inspectionFee || 0);
             pricingDetails.material_cost = Number(bundleServiceFees.materialCost || 0);
         } else {
-            // Product-only (battery / inverter / panels): Shop Checkout settings by category.
+            // Product-only (battery / inverter / panels): Shop Checkout fees by category.
             pricingDetails.delivery_fee = Number(checkoutFeeFallback.deliveryFee || 0);
             pricingDetails.installation_fee = Number(checkoutFeeFallback.installationFee || 0);
-            pricingDetails.inspection_fee = 0;
+            pricingDetails.inspection_fee = Number(checkoutFeeFallback.inspectionFee || 0);
             pricingDetails.material_cost = Number(checkoutFeeFallback.materialCost || 0);
         }
 
@@ -4552,7 +4559,7 @@ const BuyNowFlow = () => {
             bundleServiceFees: hasBundles ? bundleServiceFees : {
                 deliveryFee: checkoutFeeFallback.deliveryFee,
                 installationFee: checkoutFeeFallback.installationFee,
-                inspectionFee: 0,
+                inspectionFee: checkoutFeeFallback.inspectionFee,
                 materialCost: checkoutFeeFallback.materialCost,
             },
             stateFeeFallback: checkoutFeeFallback,
