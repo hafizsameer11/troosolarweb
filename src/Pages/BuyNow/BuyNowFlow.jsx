@@ -4372,14 +4372,15 @@ const BuyNowFlow = () => {
         const categoryInspection = Number(
             checkoutSettings?.category_inspection_fees?.[categoryKey] ?? 0
         );
-        // TrooSolar: always. Own Installer: only with "Include Cost of Installation Materials".
         const includeMaterialsOptIn = buyNowMaterialFeeApplies(
             formData.installerChoice,
             formData.includeInstallationMaterial
         );
+        const ownInstallerGetsInspection = !!checkoutSettings?.own_installer_include_inspection;
+        // TrooSolar: always. Own Installer: only if Admin enabled it AND materials checkbox is checked.
         const inspectionFee = installerIsTroosolar
             ? categoryInspection
-            : (includeMaterialsOptIn ? categoryInspection : 0);
+            : (ownInstallerGetsInspection && includeMaterialsOptIn ? categoryInspection : 0);
         const categoryMaterials = Number(
             checkoutSettings?.category_materials_fees?.[categoryKey]
             ?? checkoutSettings?.installation_materials_cost
