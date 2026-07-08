@@ -1,5 +1,6 @@
 import React, { useContext, useMemo, useState } from "react";
 import axios from "axios";
+import { Link } from "react-router-dom";
 import { ContextApi } from "../Context/AppContext";
 import { assets } from "../assets/data";
 import API from "../config/api.config";
@@ -282,9 +283,12 @@ const Product = ({
 
       {/* Actions: pinned to bottom on mobile */}
       <div className="grid grid-cols-2 gap-3 mt-3">
-        <button className="h-10 border border-[#000000] text-[12px] max-sm:text-[8px] rounded-full max-sm:rounded-2xl text-[#181919] max-sm:h-7">
+        <Link
+          to={`/homePage/product/${id}`}
+          className="h-10 border border-[#000000] text-[12px] max-sm:text-[8px] rounded-full max-sm:rounded-2xl text-[#181919] max-sm:h-7 flex items-center justify-center hover:bg-gray-50"
+        >
           Learn More
-        </button>
+        </Link>
         <button
           onClick={handleAddToCart}
           className="h-10 text-[10px] sm:text-[12px] rounded-full bg-[#273e8e] max-sm:text-[8px] max-sm:rounded-2xl  max-sm:h-7 text-white disabled:opacity-60"

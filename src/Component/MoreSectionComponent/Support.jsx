@@ -70,6 +70,7 @@ const Support = () => {
         subject: t.subject || `Ticket #${t.id}`,
         status: normalizeStatus(t.status),
         created_at: t.created_at,
+        date: t.created_at,
         messages: Array.isArray(t.messages) ? t.messages : [],
       }));
       setTickets(norm);
@@ -108,6 +109,20 @@ const Support = () => {
     }
   };
 
+  const handleTicketUpdated = (ticketId, patch) => {
+    setTickets((prev) =>
+      prev.map((t) =>
+        String(t.id) === String(ticketId)
+          ? {
+              ...t,
+              ...patch,
+              status: patch.status ? normalizeStatus(patch.status) : t.status,
+            }
+          : t
+      )
+    );
+  };
+
   // When a ticket is selected, open chat view
   useEffect(() => {
     if (selectedId) setShowChat(true);
@@ -131,6 +146,7 @@ const Support = () => {
                 setShowChat(false);
                 setSelectedId(null);
               }}
+              onTicketUpdated={handleTicketUpdated}
             />
           ) : (
             <div>
@@ -239,7 +255,7 @@ const Support = () => {
         </div>
       </div>
       {/* Mobile View */}
-      <div className="sm:hidden block min-h-screen bg-[#f5f6ff] pb-20">
+      <div className="sm:hidden block min-h-[100dvh] bg-[#f5f6ff] pb-[max(5rem,env(safe-area-inset-bottom))]">
         {newTicket ? (
           <NewTicket
             onCancel={() => setNewTicket(false)}
@@ -253,6 +269,7 @@ const Support = () => {
               setShowChat(false);
               setSelectedId(null);
             }}
+            onTicketUpdated={handleTicketUpdated}
           />
         ) : (
           <>
@@ -335,7 +352,7 @@ const Support = () => {
               </div>
             </div>
             {/* Fixed Bottom Button */}
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#f5f6ff] border-t border-gray-200">
+            <div className="fixed bottom-0 left-0 right-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-[#f5f6ff] border-t border-gray-200">
               <button
                 onClick={() => setNewTicket(true)}
                 className="w-full bg-[#273e8e] text-white rounded-full py-4 text-sm font-medium"

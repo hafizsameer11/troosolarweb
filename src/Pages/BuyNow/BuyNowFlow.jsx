@@ -4,9 +4,26 @@ import { Home, Building2, Factory, ArrowRight, ArrowLeft, Zap, Wrench, FileText,
 import axios from 'axios';
 import API, { BASE_URL } from '../../config/api.config';
 import ProductPromoBadges from '../../Component/ProductPromoBadges';
+import AuditPreferredScheduleFields from '../../Component/AuditPreferredScheduleFields';
 import GridPagination from '../../Component/GridPagination';
 import ProductCategoryGrid from '../../Component/ProductCategoryGrid';
-import { filterBillableInvoiceFees } from '../../utils/invoiceFees';
+import {
+    classifyInvoiceFeeKind,
+    filterBillableInvoiceFees,
+} from '../../utils/invoiceFees';
+import PaymentSummaryCard from '../../Component/OrderComponents/PaymentSummaryCard';
+import { resolveFlowDeliveryFee } from '../../utils/categoryDeliveryFees';
+import {
+  formatInsurancePercentLabel,
+  resolveCheckoutInsurancePercent,
+} from '../../utils/checkoutInsurance';
+import {
+  generateLocalCalendarSlots,
+  uniqueCalendarDates,
+} from '../../utils/installationSlots';
+import { filterBundleCustomServicesByFlow, BUNDLE_CHECKOUT_FLOWS } from '../../utils/bundleOrderListFlow';
+import { loginPathWithReturn } from '../../utils/authRedirect';
+import { persistSessionFromCartAccess } from '../../utils/cartAccessAuth';
 import {
     extractKvaFromBundle,
     sortBundlesByKvaAsc,
@@ -64,6 +81,436 @@ const stripFeeVisibilityPrefix = (title) => {
     if (t.startsWith(FEE_VIS_OWN_PREFIX)) return t.slice(FEE_VIS_OWN_PREFIX.length).trim();
     if (t.startsWith(FEE_VIS_BOTH_PREFIX)) return t.slice(FEE_VIS_BOTH_PREFIX.length).trim();
     return t;
+};
+
+/** True when the selection is a catalog product (not a material stub from custom bundle calc). */
+const isRealCatalogProductSelection = (p) => {
+    const prod = p?.product;
+    if (!prod || !p?.id) return false;
+    if (prod.title) return true;
+    if (prod.featured_image || prod.featured_image_url) return true;
+    if (prod.category_id != null) return true;
+    return false;
+};
+
+const GENERIC_INVOICE_BUCKET_LABELS = new Set([
+    'solar inverter',
+    'solar panels',
+    'battery',
+    'batteries',
+]);
+
+const isGenericInvoiceBreakdownRows = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return false;
+    return rows.every((row) => {
+        const desc = String(row.description || '').trim().toLowerCase();
+        return GENERIC_INVOICE_BUCKET_LABELS.has(desc)
+            || [...GENERIC_INVOICE_BUCKET_LABELS].some((label) => desc.startsWith(`${label} `));
+    });
+};
+
+const buildStandaloneProductInvoiceRows = ({
+    selectedProducts = [],
+    selectedMaterials = [],
+    allMaterialsMap = {},
+    categoryMaterials = [],
+    invoiceDetails = null,
+    orderFetchedLineItems = [],
+    hasSelectedBundles = false,
+}) => {
+    const standaloneProducts = (selectedProducts || []).filter(isRealCatalogProductSelection);
+    if (hasSelectedBundles && standaloneProducts.length === 0) {
+        return [];
+    }
+
+    return buildPostCheckoutProductRows({
+        selectedProducts: hasSelectedBundles ? standaloneProducts : selectedProducts,
+        selectedMaterials,
+        allMaterialsMap,
+        categoryMaterials,
+        invoiceDetails,
+        orderFetchedLineItems,
+        skipGenericApiBreakdown: hasSelectedBundles,
+    });
+};
+
+const buildPreCheckoutStandaloneProductRows = ({
+    selectedProducts = [],
+    selectedMaterials = [],
+    allMaterialsMap = {},
+    categoryMaterials = {},
+    hasSelectedBundles = false,
+}) => {
+    const standaloneProducts = (selectedProducts || []).filter(isRealCatalogProductSelection);
+    if (hasSelectedBundles) {
+        if (standaloneProducts.length > 0) {
+            return mapSelectedProductsToInvoiceRows(standaloneProducts);
+        }
+        return [];
+    }
+
+    return buildPreCheckoutProductRows({
+        selectedProducts,
+        selectedMaterials,
+        allMaterialsMap,
+        categoryMaterials,
+    });
+};
+
+const mapApiLineItemsToInvoiceRows = (items, idPrefix = 'api') => {
+    if (!Array.isArray(items)) return [];
+    return items.map((row, idx) => {
+        const qty = Math.max(1, Number(row.quantity ?? 1));
+        const totalCost = Number(row.total_cost ?? row.subtotal ?? 0);
+        const rate = Number(row.rate ?? row.unit_price ?? 0) || (qty > 0 ? totalCost / qty : 0);
+        const productId = row.product_id ?? row.itemable_id ?? row.id ?? null;
+        return {
+            id: `${idPrefix}-${productId ?? idx}`,
+            productId,
+            description: row.description || row.title || row.item?.title || row.item?.name || `Item #${productId ?? idx}`,
+            quantity: qty,
+            unit: row.unit || 'Nos',
+            rate,
+            totalCost: totalCost > 0 ? totalCost : rate * qty,
+        };
+    });
+};
+
+const mapSelectedProductsToInvoiceRows = (selectedProducts) => {
+    if (!Array.isArray(selectedProducts)) return [];
+    return selectedProducts.map((p) => {
+        const qty = p.quantity || 1;
+        const unitPrice = p.price || 0;
+        const prod = p.product || {};
+        return {
+            id: `sel-p-${p.id}`,
+            productId: p.id,
+            description: prod.title || prod.name || `Product #${p.id}`,
+            quantity: qty,
+            unit: 'Nos',
+            rate: unitPrice,
+            totalCost: unitPrice * qty,
+        };
+    });
+};
+
+const mapMaterialsToInvoiceRows = (selectedMaterials, allMaterialsMap, categoryMaterials) => {
+    if (!Array.isArray(selectedMaterials) || selectedMaterials.length === 0) return [];
+    return selectedMaterials.map((selMat) => {
+        const material = allMaterialsMap?.[selMat.material_id]
+            || categoryMaterials?.find((m) => m.id === selMat.material_id);
+        const qty = selMat.quantity || 1;
+        const rawPrice = Number(material?.selling_rate ?? material?.rate ?? 0);
+        const unitPrice = rawPrice > 0 ? rawPrice : 0;
+        return {
+            id: `mat-${selMat.material_id}`,
+            description: material?.name || material?.title || `Material #${selMat.material_id}`,
+            quantity: qty,
+            unit: 'Nos',
+            rate: unitPrice,
+            totalCost: unitPrice * qty,
+        };
+    }).filter((r) => r.description);
+};
+
+const mapOrderItemsToInvoiceRows = (items) => {
+    if (!Array.isArray(items)) return [];
+    return items.map((item, idx) => {
+        const qty = Math.max(1, Number(item.quantity ?? 1));
+        const listUnit = Number(item.list_unit_price ?? 0);
+        const chargedUnit = Number(item.unit_price ?? 0);
+        const subtotal = Number(item.subtotal ?? 0);
+        // Prefer catalog/list price for display; fall back to charged unit price
+        const rate = listUnit > 0 ? listUnit : (chargedUnit > 0 ? chargedUnit : (qty > 0 && subtotal > 0 ? subtotal / qty : 0));
+        const totalCost = listUnit > 0 ? listUnit * qty : (subtotal > 0 ? subtotal : rate * qty);
+        const title = item.item?.title || item.item?.name || item.title || `Item #${idx + 1}`;
+        return {
+            id: `ord-item-${item.itemable_id ?? idx}`,
+            productId: item.itemable_id ?? null,
+            description: title,
+            quantity: qty,
+            unit: 'Nos',
+            rate,
+            totalCost,
+        };
+    }).filter((r) => r.description && (r.totalCost > 0 || r.rate > 0));
+};
+
+/** Pre-checkout (order summary / pre-payment invoice): cart selections only. */
+const buildPreCheckoutProductRows = ({
+    selectedProducts = [],
+    selectedMaterials = [],
+    allMaterialsMap = {},
+    categoryMaterials = [],
+}) => {
+    const productRows = mapSelectedProductsToInvoiceRows(selectedProducts);
+    if (productRows.length > 0) return productRows;
+    return mapMaterialsToInvoiceRows(selectedMaterials, allMaterialsMap, categoryMaterials);
+};
+
+/**
+ * Post-checkout payment invoice: one authoritative source (no merging catalog + charged duplicates).
+ * Priority: checkout API line items → cart selections → persisted order items.
+ */
+const buildPostCheckoutProductRows = ({
+    selectedProducts = [],
+    selectedMaterials = [],
+    allMaterialsMap = {},
+    categoryMaterials = [],
+    invoiceDetails = null,
+    orderFetchedLineItems = [],
+    skipGenericApiBreakdown = false,
+}) => {
+    const apiRows = mapApiLineItemsToInvoiceRows(invoiceDetails?.product_line_items, 'api');
+    if (apiRows.length > 0) {
+        if (!(skipGenericApiBreakdown && isGenericInvoiceBreakdownRows(apiRows))) {
+            return apiRows;
+        }
+    }
+
+    const selectedRows = buildPreCheckoutProductRows({
+        selectedProducts,
+        selectedMaterials,
+        allMaterialsMap,
+        categoryMaterials,
+    });
+    if (selectedRows.length > 0) return selectedRows;
+
+    return mapOrderItemsToInvoiceRows(orderFetchedLineItems);
+};
+
+const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+const feeAmountFromServiceRows = (rows, needle) => {
+    const billable = filterBillableInvoiceFees(
+        (rows || []).map((r) => ({
+            description: r.description,
+            rate: Number(r.rate || 0),
+        }))
+    );
+    const match = billable.find((r) => classifyInvoiceFeeKind(r.description) === needle);
+    return match ? Number(match.rate || 0) : 0;
+};
+
+/** Sum delivery / installation / inspection / material from bundle custom_services fee rows. */
+const aggregateBundleServiceFees = (selectedBundles, getServiceRows) => {
+    const merged = [];
+    (selectedBundles || []).forEach((sb) => {
+        (getServiceRows(sb?.bundle || {}) || []).forEach((r) => {
+            const amount = Number(r.rate || 0) * (r.quantityApplies === false ? 1 : Number(r.quantity || 1));
+            if (amount > 0) {
+                merged.push({ description: r.description, rate: amount });
+            }
+        });
+    });
+    return {
+        deliveryFee: feeAmountFromServiceRows(merged, 'delivery'),
+        installationFee: feeAmountFromServiceRows(merged, 'installation'),
+        inspectionFee: feeAmountFromServiceRows(merged, 'inspection'),
+        materialCost: feeAmountFromServiceRows(merged, 'material'),
+    };
+};
+
+const mapBundleLineItemsToRows = (items, bundleQty, bundleId) =>
+    (items || []).map((item, idx) => ({
+        id: `b-${bundleId}-${idx}`,
+        description: item.description,
+        quantity: item.quantityApplies === false
+            ? 'NIL'
+            : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty),
+        unit: item.unit,
+        rate: item.rate,
+        totalCost: item.rate * (item.quantityApplies === false
+            ? 1
+            : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty)),
+    }));
+
+const invoiceRowsIncludeFee = (rows, needle) =>
+    (rows || []).some((r) => classifyInvoiceFeeKind(r.description) === needle);
+
+/** Keep one row per fee kind when admin has duplicate invoice fee entries. */
+const dedupeFeeRowsByKind = (rows) => {
+    const kept = new Set();
+    return (rows || []).filter((r) => {
+        const kind = classifyInvoiceFeeKind(r.description);
+        if (!kind) return true;
+        if (kept.has(kind)) return false;
+        kept.add(kind);
+        return true;
+    });
+};
+
+const buyNowMaterialFeeApplies = (installerChoice, includeInstallationMaterial) =>
+    installerChoice === 'own' && !!includeInstallationMaterial;
+
+const appendResolvedFeeRows = (rows, fees, bundleId) => {
+    const next = [...(rows || [])];
+    const pushFee = (needle, label, amount, unit = 'Lots') => {
+        const value = Number(amount || 0);
+        if (value <= 0 || invoiceRowsIncludeFee(next, needle)) return;
+        next.push({
+            id: `fee-${bundleId}-${needle}`,
+            description: label,
+            quantity: 1,
+            unit,
+            rate: value,
+            totalCost: value,
+        });
+    };
+    pushFee('delivery', 'Delivery Fees', fees.deliveryFee);
+    pushFee('installation', 'Installation Fees', fees.installationFee);
+    pushFee('inspection', 'Inspection Fees', fees.inspectionFee);
+    pushFee('material', 'Installation Material', fees.materialCost);
+    return next;
+};
+
+const pickCheckoutFee = (apiAmount, bundleAmount, fallbackAmount) => {
+    const api = Number(apiAmount || 0);
+    if (api > 0) return api;
+    const bundle = Number(bundleAmount || 0);
+    if (bundle > 0) return bundle;
+    return Number(fallbackAmount || 0);
+};
+
+/** Prefer explicit bundle invoice-tab fee; never use global fallback for bundles. */
+const pickBundleScopedFee = (apiAmount, bundleAmount, fallbackAmount, bundleFeesOnly) => {
+    if (bundleFeesOnly) {
+        const bundle = Number(bundleAmount || 0);
+        if (bundle > 0) return bundle;
+        return Number(apiAmount || 0);
+    }
+    return pickCheckoutFee(apiAmount, bundleAmount, fallbackAmount);
+};
+
+/** Shared invoice math for step 5 display and Flutterwave — excludes legacy default fees. */
+const computeBuyNowInvoiceTotals = ({
+    invoiceDetails,
+    productInvoiceRows = [],
+    bundleNetTotal = 0,
+    vatPercent = 7.5,
+    bundleServiceFees = null,
+    stateFeeFallback = null,
+    catalogSubtotal = 0,
+    bundleFeesOnly = false,
+}) => {
+    const rawFeeRows = [
+        { description: 'Delivery fee', rate: Number(invoiceDetails?.delivery_fee || 0) },
+        { description: 'Installation fee', rate: Number(invoiceDetails?.installation_fee || 0) },
+        { description: 'Material cost', rate: Number(invoiceDetails?.material_cost || 0) },
+        { description: 'Inspection fee', rate: Number(invoiceDetails?.inspection_fee || 0) },
+    ];
+    const billableFeeRows = filterBillableInvoiceFees(rawFeeRows);
+    const billableFeesTotal = billableFeeRows.reduce((s, r) => s + Number(r.rate || 0), 0);
+
+    const lineItemsSubtotal = productInvoiceRows.reduce((s, row) => s + Number(row.totalCost || 0), 0);
+    const apiItemsSubtotal = Number(invoiceDetails?.items_subtotal_before_discount || 0);
+    const catalogItemsSubtotal = Number(catalogSubtotal || 0);
+    const subTotalBeforeDiscount = apiItemsSubtotal > 0
+        ? apiItemsSubtotal
+        : (catalogItemsSubtotal > 0
+            ? catalogItemsSubtotal
+            : bundleNetTotal + lineItemsSubtotal);
+
+    const outrightDiscountPct = Number(invoiceDetails?.outright_discount_percentage || 0);
+    const apiDiscountAmount = Number(invoiceDetails?.outright_discount_amount || 0);
+    const effectiveOutrightDiscount = apiDiscountAmount > 0
+        ? apiDiscountAmount
+        : (outrightDiscountPct > 0 ? (subTotalBeforeDiscount * outrightDiscountPct) / 100 : 0);
+
+    const apiInsurance = Number(invoiceDetails?.insurance_fee || 0);
+    const insuranceAmount = apiInsurance > 0 ? apiInsurance : 0;
+    const discountedSubTotal = Math.max(subTotalBeforeDiscount - effectiveOutrightDiscount, 0);
+
+    const feeAmount = (needle) => {
+        const row = billableFeeRows.find((r) =>
+            String(r.description || '').toLowerCase().includes(needle)
+        );
+        return row ? Number(row.rate || 0) : 0;
+    };
+    const bundleFees = bundleServiceFees || {};
+    const stateFees = bundleFeesOnly ? {} : (stateFeeFallback || {});
+    const deliveryFee = pickBundleScopedFee(
+        feeAmount('delivery'),
+        bundleFees.deliveryFee,
+        stateFees.deliveryFee,
+        bundleFeesOnly
+    );
+    const installationFee = pickBundleScopedFee(
+        feeAmount('installation'),
+        bundleFees.installationFee,
+        stateFees.installationFee,
+        bundleFeesOnly
+    );
+    const materialCost = pickBundleScopedFee(
+        feeAmount('material'),
+        bundleFees.materialCost,
+        0,
+        bundleFeesOnly
+    );
+    const inspectionFee = pickBundleScopedFee(
+        feeAmount('inspection'),
+        bundleFees.inspectionFee,
+        stateFees.inspectionFee,
+        bundleFeesOnly
+    );
+    const serviceFeesTotal = deliveryFee + installationFee + materialCost + inspectionFee;
+
+    const totalAmount = roundMoney(discountedSubTotal + serviceFeesTotal);
+    const vatAmount = roundMoney((totalAmount * vatPercent) / 100);
+    const grandTotal = roundMoney(totalAmount + vatAmount + insuranceAmount);
+
+    return {
+        billableFeeRows,
+        billableFeesTotal: serviceFeesTotal,
+        deliveryFee,
+        installationFee,
+        materialCost,
+        inspectionFee,
+        subTotalBeforeDiscount,
+        effectiveOutrightDiscount,
+        outrightDiscountPct,
+        discountedSubTotal,
+        totalAmount,
+        insuranceAmount,
+        vatBase: totalAmount,
+        netTotal: totalAmount,
+        vatAmount,
+        grandTotal,
+    };
+};
+
+const BuyNowLineItemsTable = ({ rows, emptyLabel = 'No items' }) => {
+    if (!rows?.length) return null;
+    return (
+        <div className="overflow-x-auto border border-gray-200 rounded-lg mb-6">
+            <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr className="bg-gray-100 border-b border-gray-200">
+                        <th className="py-3 px-4 font-semibold text-gray-700">Item description</th>
+                        <th className="py-3 px-4 font-semibold text-gray-700 text-center w-16">Qty</th>
+                        <th className="py-3 px-4 font-semibold text-gray-700 text-center w-16">Unit</th>
+                        <th className="py-3 px-4 font-semibold text-gray-700 text-right w-28">Rate</th>
+                        <th className="py-3 px-4 font-semibold text-gray-700 text-right w-32">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((row) => (
+                        <tr key={row.id} className="border-b border-gray-100 even:bg-gray-50/60">
+                            <td className="py-3 px-4 text-gray-800">{stripFeeVisibilityPrefix(row.description)}</td>
+                            <td className="py-3 px-4 text-center text-gray-700">{row.quantity}</td>
+                            <td className="py-3 px-4 text-center text-gray-600">{row.unit}</td>
+                            <td className="py-3 px-4 text-right text-gray-700 tabular-nums">
+                                {row.rate > 0 ? `₦${formatAmount(row.rate)}` : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right font-semibold text-gray-900 tabular-nums">
+                                {row.totalCost > 0 ? `₦${formatAmount(row.totalCost)}` : '—'}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
 };
 
 // Format backup time text - split sentences by periods and display on separate lines with blank line between
@@ -243,13 +690,16 @@ const BuyNowFlow = () => {
     const [processingPayment, setProcessingPayment] = useState(false);
     const [invoiceDetails, setInvoiceDetails] = useState(null);
     const [orderId, setOrderId] = useState(null);
+    const [orderFetchedLineItems, setOrderFetchedLineItems] = useState([]);
     const [calendarSlots, setCalendarSlots] = useState([]);
+    const [calendarSlotsLoading, setCalendarSlotsLoading] = useState(false);
     const [paymentResult, setPaymentResult] = useState(null); // 'success' | 'failed' | null
     const [selectedSlot, setSelectedSlot] = useState(null);
     
     // Configuration data from API
     const [addOns, setAddOns] = useState([]);
     const [states, setStates] = useState([]);
+    const [checkoutSettings, setCheckoutSettings] = useState(null);
     const [auditTypes, setAuditTypes] = useState([]);
     const [deliveryLocations, setDeliveryLocations] = useState([]);
     const [selectedStateId, setSelectedStateId] = useState(null);
@@ -294,6 +744,7 @@ const BuyNowFlow = () => {
         singleItemQuantity: 1, // Quantity for single item (fallback case)
         installerChoice: '', // 'troosolar', 'own'
         includeInsurance: false,
+        includeInstallationMaterial: false,
         includeInspection: true,
         fullName: '',
         phone: '',
@@ -309,6 +760,8 @@ const BuyNowFlow = () => {
         estateName: '',
         estateAddress: '',
         streetName: '', // Street name for property address
+        preferredAuditDate: '',
+        preferredAuditTime: '',
     });
 
     // Bundles for selection
@@ -373,12 +826,14 @@ const BuyNowFlow = () => {
 
             if (response.data.status === 'success') {
                 const cartData = response.data.data;
-                
-                // Check if login is required
+
+                persistSessionFromCartAccess(cartData);
+
                 if (cartData.requires_login) {
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('user');
                     const returnUrl = `/cart?token=${encodeURIComponent(token)}&type=${encodeURIComponent(orderType)}`;
-                    alert('Please login to access your cart');
-                    navigate(`/login?return=${encodeURIComponent(returnUrl)}`);
+                    navigate(loginPathWithReturn(returnUrl));
                     return;
                 }
 
@@ -897,6 +1352,8 @@ const BuyNowFlow = () => {
     };
 
     const bundlesFetchedRef = useRef(false);
+    const bundlesNeedRefreshRef = useRef(false);
+    const bundlesSnapshotRef = useRef([]);
 
     // System size options derived from actual bundles (only sizes we have)
     const sizeOptions = useMemo(() => {
@@ -1116,6 +1573,9 @@ const BuyNowFlow = () => {
                 auditRequestPayload.estate_address = formData.estateAddress;
             }
 
+            auditRequestPayload.preferred_audit_date = formData.preferredAuditDate;
+            auditRequestPayload.preferred_audit_time = formData.preferredAuditTime;
+
             // Add cart token if this is a custom order flow
             if (cartToken) {
                 auditRequestPayload.cart_token = cartToken;
@@ -1153,76 +1613,9 @@ const BuyNowFlow = () => {
     const handleOptionSelect = async (option) => {
         setFormData(prev => ({ ...prev, optionType: option }));
         if (option === 'choose-system') {
-            // Clear previous bundles and set loading state BEFORE navigating
-            setBundles([]);
-            setBundlesLoading(true);
-            setStep(3.5); // Navigate to Bundle Selection step first to show loading
-            
-            try {
-                const token = localStorage.getItem('access_token');
-                
-                // Map product category to bundle type for API
-                // full-kit -> solar-inverter-battery
-                // inverter-battery -> inverter-battery
-                const bundleTypeMap = {
-                    'full-kit': 'solar-inverter-battery',
-                    'inverter-battery': 'inverter-battery'
-                };
-                
-                const bundleType = bundleTypeMap[formData.productCategory] || 'inverter-battery';
-                
-                // Fetch bundles by type using the new endpoint
-                const response = await axios.get(API.BUNDLES_BY_TYPE(bundleType), {
-                    headers: {
-                        Accept: 'application/json',
-                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                    },
-                });
-                
-                // Handle different response formats
-                const root = response.data?.data ?? response.data;
-                // Handle both array and single object responses
-                let arr = [];
-                if (Array.isArray(root)) {
-                    arr = root;
-                } else if (Array.isArray(root?.data)) {
-                    arr = root.data;
-                } else if (root && typeof root === "object" && root.id) {
-                    // Single bundle object - wrap in array
-                    arr = [root];
-                }
-                setBundles(filterBundlesByCategory(arr, formData.productCategory || 'full-kit'));
-            } catch (error) {
-                console.error("Failed to fetch bundles:", error);
-                // Fallback to general bundles endpoint if type-specific fails
-                try {
-                    const token = localStorage.getItem('access_token');
-                    const fallbackResponse = await axios.get(API.BUNDLES, {
-                        headers: {
-                            Accept: 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                    });
-                    const root = fallbackResponse.data?.data ?? fallbackResponse.data;
-                    // Handle both array and single object responses
-                    let arr = [];
-                    if (Array.isArray(root)) {
-                        arr = root;
-                    } else if (Array.isArray(root?.data)) {
-                        arr = root.data;
-                    } else if (root && typeof root === "object" && root.id) {
-                        // Single bundle object - wrap in array
-                        arr = [root];
-                    }
-                    setBundles(filterBundlesByCategory(arr, formData.productCategory || 'full-kit'));
-                } catch (fallbackError) {
-                    console.error("Fallback bundle fetch also failed:", fallbackError);
-                    alert("Failed to load bundles. Please try again.");
-                    setBundles([]);
-                }
-            } finally {
-                setBundlesLoading(false);
-            }
+            bundlesNeedRefreshRef.current = true;
+            bundlesFetchedRef.current = false;
+            setStep(3.5);
         } else if (option === 'build-system') {
             // Fetch material categories for building a custom system
             setMaterialCategories([]);
@@ -1526,6 +1919,7 @@ const BuyNowFlow = () => {
                 product_category: formData.productCategory,
                 installer_choice: formData.installerChoice || 'troosolar',
                 include_insurance: formData.includeInsurance || false,
+                include_installation_material: !!formData.includeInstallationMaterial,
                 property_state: formData.state,
                 property_address: formatBuyNowInstallationAddress(),
                 contact_name: formData.fullName?.trim() || undefined,
@@ -1534,8 +1928,18 @@ const BuyNowFlow = () => {
             if (formData.floors) payload.property_floors = Number(formData.floors) || null;
             if (formData.rooms) payload.property_rooms = Number(formData.rooms) || null;
 
+            const catalogProductSelections = formData.selectedProducts.filter(isRealCatalogProductSelection);
+
+            // Catalog products (battery, inverter, panels, etc.) — takes priority over build-system materials
+            if (catalogProductSelections.length > 0) {
+                payload.amount = catalogProductSelections.reduce(
+                    (sum, p) => sum + (p.price * (p.quantity || 1)),
+                    0
+                );
+                payload.product_ids = catalogProductSelections.map((p) => Number(p.id));
+            }
             // Bundles in cart: always send bundle_id + line total (fixes orders with amount-only and null bundle_id)
-            if (formData.selectedBundles?.length > 0) {
+            else if (formData.selectedBundles?.length > 0) {
                 const primary = formData.selectedBundles[0];
                 const bundleDbId = primary?.id ?? primary?.bundle?.id ?? formData.selectedBundleId;
                 if (bundleDbId) payload.bundle_id = Number(bundleDbId);
@@ -1550,24 +1954,24 @@ const BuyNowFlow = () => {
                 else if (formData.selectedProductPrice > 0) payload.amount = formData.selectedProductPrice;
             }
             // For custom bundles (build-system): send amount and custom_materials
-            else if (formData.optionType === 'build-system' && formData.selectedProducts.length > 0) {
-                payload.amount = formData.selectedProductPrice;
-                payload.custom_materials = formData.selectedProducts.map(p => ({
-                    material_id: p.id,
-                    quantity: p.quantity || 1
+            else if (formData.optionType === 'build-system' && selectedMaterials.length > 0) {
+                const materialsTotal = selectedMaterials.reduce((sum, selMat) => {
+                    const mat = allMaterialsMap[selMat.material_id] || categoryMaterials.find((m) => m.id === selMat.material_id);
+                    const rate = Number(mat?.selling_rate ?? mat?.rate ?? 0);
+                    return sum + rate * (selMat.quantity || 1);
+                }, 0);
+                payload.amount = materialsTotal > 0 ? materialsTotal : formData.selectedProductPrice;
+                payload.custom_materials = selectedMaterials.map((m) => ({
+                    material_id: m.material_id,
+                    quantity: m.quantity || 1,
                 }));
             }
-            // For individual products (single item categories)
+            // For individual products (legacy single-id path)
             else if (formData.selectedProductId || formData.selectedProducts.length > 0) {
                 if (formData.selectedProducts.length > 0) {
-                    // Multiple products selected
                     payload.amount = formData.selectedProductPrice;
-                    payload.custom_materials = formData.selectedProducts.map(p => ({
-                        material_id: p.id,
-                        quantity: p.quantity || 1
-                    }));
+                    payload.product_ids = formData.selectedProducts.map((p) => Number(p.id));
                 } else {
-                    // Single product
                     payload.product_id = formData.selectedProductId;
                     payload.amount = formData.selectedProductPrice;
                 }
@@ -1593,8 +1997,10 @@ const BuyNowFlow = () => {
             });
 
             if (response.data.status === 'success') {
-                setInvoiceDetails(response.data.data);
-                setOrderId(response.data.data.order_id);
+                const checkoutData = response.data.data;
+                setInvoiceDetails(checkoutData);
+                setOrderId(checkoutData.order_id);
+                setOrderFetchedLineItems([]);
                 setStep(5);
             }
         } catch (error) {
@@ -1609,17 +2015,36 @@ const BuyNowFlow = () => {
     };
 
     const fetchCalendarSlots = async () => {
+        const paymentDate = new Date().toISOString().split('T')[0];
+        const applyFallback = () => {
+            setCalendarSlots(
+                generateLocalCalendarSlots({ paymentDate, type: 'installation' })
+            );
+        };
+
+        setCalendarSlotsLoading(true);
         try {
             const token = localStorage.getItem('access_token');
-            const date = new Date().toISOString().split('T')[0];
-            const response = await axios.get(`${API.CALENDAR_SLOTS}?type=installation&payment_date=${date}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            if (response.data.status === 'success') {
-                setCalendarSlots(response.data.data.slots);
+            const response = await axios.get(
+                `${API.CALENDAR_SLOTS}?type=installation&payment_date=${paymentDate}`,
+                {
+                    headers: {
+                        Accept: 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                    },
+                }
+            );
+            const slots = response?.data?.data?.slots;
+            if (response.data?.status === 'success' && Array.isArray(slots) && slots.length > 0) {
+                setCalendarSlots(slots);
+            } else {
+                applyFallback();
             }
         } catch (error) {
-            console.error("Calendar Error:", error);
+            console.error('Calendar Error:', error);
+            applyFallback();
+        } finally {
+            setCalendarSlotsLoading(false);
         }
     };
 
@@ -1663,15 +2088,15 @@ const BuyNowFlow = () => {
         try {
             await ensureFlutterwave();
 
-            // Use same logic as invoice display: correct total when API underreports product price
-            const basePriceFromItems = formData.selectedBundles.reduce((sum, b) => sum + (b.price * (b.quantity || 1)), 0)
-                + formData.selectedProducts.reduce((sum, p) => sum + (p.price * (p.quantity || 1)), 0);
-            const basePrice = basePriceFromItems > 0 ? basePriceFromItems : (formData.selectedProductPrice * (formData.singleItemQuantity || 1));
-            const fees = (invoiceDetails.installation_fee || 0) + (invoiceDetails.material_cost || 0) + (invoiceDetails.delivery_fee || 0)
-                + (invoiceDetails.inspection_fee || 0) + (invoiceDetails.insurance_fee || 0) + (invoiceDetails.add_ons_total || 0);
-            const calculatedTotal = basePrice + fees;
-            const apiTotal = invoiceDetails.total != null ? Number(invoiceDetails.total) : null;
-            const amount = (basePrice > 0 && (apiTotal == null || apiTotal < basePrice)) ? calculatedTotal : (apiTotal ?? calculatedTotal ?? 0);
+            const { invoiceTotals } = buildBuyNowInvoiceViewModel(invoiceDetails);
+            const amount = invoiceTotals.grandTotal;
+
+            if (!amount || amount <= 0) {
+                alert("Invalid payment amount. Please refresh and try again.");
+                setProcessingPayment(false);
+                return;
+            }
+
             const txRef = "buynow_" + Date.now() + "_" + orderId;
 
             // Get user info from localStorage or API
@@ -1734,9 +2159,10 @@ const BuyNowFlow = () => {
         const fetchConfig = async () => {
             setConfigLoading(true);
             try {
-                const [addOnsRes, statesRes] = await Promise.all([
+                const [addOnsRes, statesRes, checkoutRes] = await Promise.all([
                     axios.get(API.CONFIG_ADD_ONS, { params: { type: 'buy_now' } }).catch(() => ({ data: { status: 'error' }, status: 404 })),
-                    axios.get(API.CONFIG_STATES).catch(() => ({ data: { status: 'error' }, status: 404 }))
+                    axios.get(API.CONFIG_STATES).catch(() => ({ data: { status: 'error' }, status: 404 })),
+                    axios.get(API.CONFIG_CHECKOUT_SETTINGS).catch(() => ({ data: { status: 'error' }, status: 404 })),
                 ]);
 
                 // Only set data if API call was successful (not 404)
@@ -1745,6 +2171,9 @@ const BuyNowFlow = () => {
                 }
                 if (statesRes.status !== 404 && statesRes.data?.status === 'success') {
                     setStates(statesRes.data.data || []);
+                }
+                if (checkoutRes.status !== 404 && checkoutRes.data?.status === 'success') {
+                    setCheckoutSettings(checkoutRes.data.data || null);
                 }
             } catch (error) {
                 // Silently fail - APIs may not be implemented yet
@@ -1792,15 +2221,42 @@ const BuyNowFlow = () => {
     }, [selectedStateId]);
 
     useEffect(() => {
-        if (step === 5) {
+        if (step === 7.5 && formData.optionType !== 'audit') {
             fetchCalendarSlots();
         }
-    }, [step]);
+    }, [step, formData.optionType]);
 
-    // Enrich bundle details (custom_services / bundle_items) when entering Order Summary (step 7)
-    // Always re-fetch to get latest admin-configured order list items
+    // After checkout, load order line items only when checkout response had no product_line_items.
     useEffect(() => {
-        if (step === 7 && formData.selectedBundles.length > 0) {
+        if (step !== 5 || !orderId) return;
+        if (Array.isArray(invoiceDetails?.product_line_items) && invoiceDetails.product_line_items.length > 0) {
+            return;
+        }
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+
+        let cancelled = false;
+        const loadOrderItems = async () => {
+            try {
+                const response = await axios.get(`${API.ORDERS}/${orderId}`, {
+                    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+                });
+                const order = response.data?.data ?? response.data;
+                const items = order?.items;
+                if (!cancelled && Array.isArray(items) && items.length > 0) {
+                    setOrderFetchedLineItems(items);
+                }
+            } catch (err) {
+                console.warn('Could not load order items for invoice:', err);
+            }
+        };
+        loadOrderItems();
+        return () => { cancelled = true; };
+    }, [step, orderId, invoiceDetails?.product_line_items]);
+
+    // Enrich bundle details when entering Order Summary or Invoice
+    useEffect(() => {
+        if ((step === 7 || step === 7.5) && formData.selectedBundles.length > 0) {
             enrichBundlesForOrderSummary();
         }
     }, [step]);
@@ -1861,13 +2317,91 @@ const BuyNowFlow = () => {
         if (!Array.isArray(arr)) return [];
         const aliases = bundleTypeAliasesByCategory[categoryKey];
         if (!aliases?.length) return arr;
+        const fullKitAliases = bundleTypeAliasesByCategory['full-kit'] || [];
         return arr.filter((bundle) => {
             const normalized = normalizeBundleType(
                 bundle?.bundle_type || bundle?.category || bundle?.product_category || bundle?.category_type
             );
+            if (categoryKey === 'inverter-battery') {
+                const isFullSolarKit = fullKitAliases.some((alias) =>
+                    normalized.includes(normalizeBundleType(alias))
+                );
+                if (isFullSolarKit) return false;
+            }
             return aliases.some((alias) => normalized.includes(normalizeBundleType(alias)));
         });
     }, [bundleTypeAliasesByCategory]);
+
+    const parseBundlesApiList = (response) => {
+        const root = response?.data?.data ?? response?.data;
+        if (Array.isArray(root)) return root;
+        if (Array.isArray(root?.data)) return root.data;
+        if (root && typeof root === 'object' && root.id) return [root];
+        return [];
+    };
+
+    const loadBundlesForSelectionStep = React.useCallback(async () => {
+        const qParam = searchParams.get('q');
+        const hasLoadParam = qParam && !Number.isNaN(Number(qParam));
+        const productCategory = formData.productCategory || searchParams.get('category') || 'full-kit';
+
+        if (hasLoadParam) {
+            bundlesFetchedRef.current = true;
+        }
+
+        setBundlesLoading(true);
+        try {
+            const token = localStorage.getItem('access_token');
+            const headers = {
+                Accept: 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            };
+            let arr = [];
+
+            if (hasLoadParam) {
+                const loadW = Math.max(0, Math.round(Number(qParam)));
+                const bundleTypeByCategory = {
+                    'full-kit': 'Solar+Inverter+Battery',
+                    'inverter-battery': 'Inverter + Battery',
+                };
+                const bundleTypeParam = bundleTypeByCategory[productCategory];
+                const queryParams = new URLSearchParams({ q: String(loadW) });
+                const kvaParam = searchParams.get('kva');
+                if (kvaParam) {
+                    queryParams.set('kva', String(kvaParam));
+                }
+                if (bundleTypeParam) {
+                    queryParams.set('bundle_type', bundleTypeParam);
+                }
+                const response = await axios.get(`${API.BUNDLES}?${queryParams.toString()}`, { headers });
+                arr = parseBundlesApiList(response);
+            } else {
+                const bundleTypeMap = {
+                    'full-kit': 'solar-inverter-battery',
+                    'inverter-battery': 'inverter-battery',
+                };
+                const bundleType = bundleTypeMap[productCategory] || 'inverter-battery';
+                try {
+                    const response = await axios.get(API.BUNDLES_BY_TYPE(bundleType), { headers });
+                    arr = parseBundlesApiList(response);
+                } catch (error) {
+                    console.error('Failed to fetch bundles by type:', error);
+                    const fallbackResponse = await axios.get(API.BUNDLES, { headers });
+                    arr = parseBundlesApiList(fallbackResponse);
+                }
+            }
+
+            const filtered = filterBundlesByCategory(arr, productCategory);
+            bundlesSnapshotRef.current = filtered;
+            setBundles(filtered);
+        } catch (error) {
+            console.error('Failed to fetch bundles for selection step:', error);
+            setBundles([]);
+        } finally {
+            setBundlesLoading(false);
+            bundlesNeedRefreshRef.current = false;
+        }
+    }, [searchParams, formData.productCategory, filterBundlesByCategory]);
 
     const activeSolutionCategory = formData.productCategory || searchParams.get('category') || 'full-kit';
     const isInverterFlow = activeSolutionCategory === 'inverter-battery';
@@ -1875,63 +2409,45 @@ const BuyNowFlow = () => {
     const solutionListLabel = isInverterFlow ? 'inverter solutions' : 'solar bundles';
 
     useEffect(() => {
-        const qParam = searchParams.get('q');
-        const hasLoadParam = qParam && !Number.isNaN(Number(qParam));
-        if (step === 3.5 && hasLoadParam && !bundlesFetchedRef.current && !bundlesLoading) {
-            bundlesFetchedRef.current = true;
-            setBundles([]);
-            const userLoadW = Number(qParam);
-            const loadW = Math.max(0, Math.round(userLoadW));
-            const fetchBundles = async () => {
-                setBundlesLoading(true);
-                try {
-                    const token = localStorage.getItem('access_token');
-                    const productCategory = searchParams.get('category') || 'full-kit';
-                    const bundleTypeByCategory = {
-                        'full-kit': 'Solar+Inverter+Battery',
-                        'inverter-battery': 'Inverter + Battery',
-                    };
-                    const bundleTypeParam = bundleTypeByCategory[productCategory];
-                    const queryParams = new URLSearchParams({ q: String(loadW) });
-                    const kvaParam = searchParams.get('kva');
-                    if (kvaParam) {
-                        queryParams.set('kva', String(kvaParam));
-                    }
-                    if (bundleTypeParam) {
-                        queryParams.set('bundle_type', bundleTypeParam);
-                    }
-                    const url = `${API.BUNDLES}?${queryParams.toString()}`;
-                    const response = await axios.get(url, {
-                        headers: {
-                            Accept: 'application/json',
-                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                    });
-                    const root = response.data?.data ?? response.data;
-                    let arr = [];
-                    if (Array.isArray(root)) {
-                        arr = root;
-                    } else if (Array.isArray(root?.data)) {
-                        arr = root.data;
-                    } else if (root && typeof root === "object" && root.id) {
-                        arr = [root];
-                    }
-                    arr = filterBundlesByCategory(arr, productCategory);
-                    setBundles(arr);
-                } catch (error) {
-                    console.error("Failed to fetch bundles:", error);
-                    setBundles([]);
-                } finally {
-                    setBundlesLoading(false);
-                }
-            };
-            fetchBundles();
-        }
         if (step !== 3.5) {
             bundlesFetchedRef.current = false;
-            setBundles([]);
+            return;
         }
-    }, [step, bundlesLoading, searchParams, filterBundlesByCategory]);
+
+        const effectiveOption = formData.optionType || 'choose-system';
+        if (effectiveOption !== 'choose-system') {
+            return;
+        }
+
+        if (bundles.length === 0 && bundlesSnapshotRef.current.length > 0) {
+            setBundles(bundlesSnapshotRef.current);
+            return;
+        }
+
+        if (bundlesLoading) {
+            return;
+        }
+
+        const qParam = searchParams.get('q');
+        const hasLoadParam = qParam && !Number.isNaN(Number(qParam));
+        const needsFetch = bundles.length === 0 || bundlesNeedRefreshRef.current;
+        if (!needsFetch) {
+            return;
+        }
+        if (hasLoadParam && bundlesFetchedRef.current && !bundlesNeedRefreshRef.current) {
+            return;
+        }
+
+        loadBundlesForSelectionStep();
+    }, [
+        step,
+        formData.optionType,
+        formData.productCategory,
+        bundles.length,
+        bundlesLoading,
+        searchParams,
+        loadBundlesForSelectionStep,
+    ]);
 
     // --- Render Steps ---
 
@@ -2724,9 +3240,12 @@ const BuyNowFlow = () => {
             <div className="animate-fade-in">
                 <button onClick={() => {
                     bundlesFetchedRef.current = false;
-                    setBundles([]);
-                    if (searchParams.get('fromCalculator') === 'true') {
-                        navigate(`/tools?inverter=true&returnTo=buy-now&source=flow&category=${encodeURIComponent(formData.productCategory || 'full-kit')}`);
+                    if (searchParams.get('fromCalculator') === 'true' || searchParams.get('q')) {
+                        const q = searchParams.get('q') || '';
+                        const qParam = q ? `&q=${encodeURIComponent(q)}` : '';
+                        navigate(
+                            `/tools?inverter=true&returnTo=buy-now&source=flow&category=${encodeURIComponent(formData.productCategory || 'full-kit')}${qParam}`
+                        );
                         return;
                     }
                     setStep(3);
@@ -2748,7 +3267,7 @@ const BuyNowFlow = () => {
                     <p className="text-center mb-8">
                         <a
                             href={`/tools?inverter=true&returnTo=buy-now&source=flow&category=${encodeURIComponent(formData.productCategory || 'full-kit')}&q=${encodeURIComponent(searchParams.get('q') || '')}`}
-                            className="text-[#273e8e] underline font-medium text-sm"
+                            className="text-[#273e8e] underline font-bold text-base"
                         >
                             Edit load
                         </a>
@@ -2779,6 +3298,19 @@ const BuyNowFlow = () => {
                                 className="mt-2 text-[#273e8e] hover:underline font-semibold text-sm"
                             >
                                 Clear filter
+                            </button>
+                        )}
+                        {bundles.length === 0 && selectedSystemSize === "all" && !searchParams.get('q') && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    bundlesNeedRefreshRef.current = true;
+                                    bundlesFetchedRef.current = false;
+                                    loadBundlesForSelectionStep();
+                                }}
+                                className="mt-2 block mx-auto text-[#273e8e] hover:underline font-semibold text-sm"
+                            >
+                                Try again
                             </button>
                         )}
                         <button
@@ -3435,7 +3967,7 @@ const BuyNowFlow = () => {
                 <h3 className="text-lg font-bold mb-4 text-gray-800">Installation Preference</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <button
-                        onClick={() => setFormData({ ...formData, installerChoice: 'troosolar' })}
+                        onClick={() => setFormData({ ...formData, installerChoice: 'troosolar', includeInstallationMaterial: false })}
                         className={`p-6 rounded-xl border-2 text-left transition-all ${formData.installerChoice === 'troosolar'
                             ? 'border-[#273e8e] bg-blue-50'
                             : 'border-gray-200 hover:border-blue-200'
@@ -3449,7 +3981,7 @@ const BuyNowFlow = () => {
                     </button>
 
                     <button
-                        onClick={() => setFormData({ ...formData, installerChoice: 'own', includeInsurance: false })}
+                        onClick={() => setFormData({ ...formData, installerChoice: 'own', includeInsurance: false, includeInstallationMaterial: false })}
                         className={`p-6 rounded-xl border-2 text-left transition-all ${formData.installerChoice === 'own'
                             ? 'border-[#273e8e] bg-blue-50'
                             : 'border-gray-200 hover:border-blue-200'
@@ -3489,17 +4021,38 @@ const BuyNowFlow = () => {
                             }`}>
                                 <Shield size={18} className={`mr-2 ${
                                     formData.installerChoice === 'own' ? 'text-gray-400' : 'text-[#273e8e]'
-                                }`} /> Include Insurance
+                                }`} /> Include 12months Insurance
                             </span>
                             <p className={`text-sm mt-1 ${
                                 formData.installerChoice === 'own' ? 'text-gray-400' : 'text-gray-500'
                             }`}>
                                 {formData.installerChoice === 'own' 
                                     ? 'Insurance is only available with Troosolar Certified Installer.' 
-                                    : 'Protect your investment against damage and theft (3% of product price).'}
+                                    : `Protect your investment from fire damage and theft (${formatInsurancePercentLabel(resolveCheckoutInsurancePercent(checkoutSettings))}% of order sub-total when selected)`}
                             </p>
                         </div>
                     </label>
+
+                    {formData.installerChoice === 'own' && (
+                        <label className={`flex items-start p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            formData.includeInstallationMaterial
+                                ? 'border-[#273e8e] bg-blue-50'
+                                : 'border-gray-200'
+                        }`}>
+                            <input
+                                type="checkbox"
+                                className="mt-1 h-5 w-5 text-[#273e8e] focus:ring-[#273e8e] border-gray-300 rounded"
+                                checked={!!formData.includeInstallationMaterial}
+                                onChange={(e) => setFormData({ ...formData, includeInstallationMaterial: e.target.checked })}
+                            />
+                            <div className="ml-3">
+                                <span className="font-bold text-gray-800 flex items-center">
+                                    <Wrench size={18} className="mr-2 text-[#273e8e]" />
+                                    Include Cost of Installation Materials
+                                </span>
+                            </div>
+                        </label>
+                    )}
 
                     {/* Other Add-Ons from API */}
                     {addOns.filter(addon => !addon.is_compulsory_buy_now).map((addon) => (
@@ -3614,6 +4167,7 @@ const BuyNowFlow = () => {
             if (s.startsWith(FEE_VIS_BOTH_PREFIX)) return 'both';
             const lower = s.toLowerCase();
             // Backward-compatible defaults for legacy untagged fee names
+            if (lower.includes('material')) return 'own';
             if (lower.includes('installation fee') || lower.includes('inspection fee')) return 'troosolar';
             if (lower.includes('delivery fee') || lower.includes('delivery/logistics')) return 'both';
             return 'both';
@@ -3732,7 +4286,8 @@ const BuyNowFlow = () => {
             if (t.startsWith(OL_PREFIX)) return t.slice(OL_PREFIX.length).trim();
             return t;
         };
-        const relServices = bundle?.customServices ?? bundle?.custom_services ?? [];
+        const relServicesAll = bundle?.customServices ?? bundle?.custom_services ?? [];
+        const relServices = filterBundleCustomServicesByFlow(relServicesAll, BUNDLE_CHECKOUT_FLOWS.BUY_NOW);
         const hasCustomServiceFeeRows = relServices.some((s) => {
             const t = String(s?.title || '');
             return !t.startsWith(OL_PREFIX) && !t.startsWith(OL_VIS_TROO_PREFIX) && !t.startsWith(OL_VIS_OWN_PREFIX);
@@ -3750,6 +4305,9 @@ const BuyNowFlow = () => {
             } else {
                 const cleanTitle = stripFeeVisibilityPrefix(rawTitle);
                 const visibility = parseFeeVisibility(rawTitle);
+                if (/material/i.test(cleanTitle) && !buyNowMaterialFeeApplies(installerChoice, formData.includeInstallationMaterial)) {
+                    return;
+                }
                 const qtyMeta = resolveQtyAndUnit([s], 1, /inspection/i.test(cleanTitle) ? 'Lots' : 'Nos');
                 if (feeVisibleForInstaller(visibility, installerChoice)) {
                     serviceRows.push({ description: cleanTitle, quantity: qtyMeta.quantity, unit: qtyMeta.unit, quantityApplies: qtyMeta.quantityApplies, rate: toNumber(s?.service_amount) });
@@ -3757,7 +4315,7 @@ const BuyNowFlow = () => {
             }
         });
         // Invoice fees come only from admin-configured custom_services (never material fallbacks).
-        const billableServiceRows = filterBillableInvoiceFees(serviceRows);
+        const billableServiceRows = filterBillableInvoiceFees(dedupeFeeRowsByKind(serviceRows));
 
         const orderListItems = customOrderItems.length > 0 ? [...customOrderItems] : [...productRows];
         const invoiceItems = [...orderListItems, ...billableServiceRows];
@@ -3765,7 +4323,369 @@ const BuyNowFlow = () => {
         return { orderListItems, invoiceItems, serviceRows: billableServiceRows, productRows, itemsTotal: orderListTotal, hasCustomServiceFeeRows };
     };
 
-    // Fetch full bundle details (with custom_services) before showing Order Summary
+    const getBuyNowStateFeeFallback = () => {
+        const selectedState = states.find((s) => s.id === formData.stateId);
+        const deliveryFee = resolveFlowDeliveryFee({
+            productCategory: formData.productCategory,
+            categoryDeliveryFees: checkoutSettings?.category_delivery_fees,
+            defaultDeliveryFee: checkoutSettings?.delivery_fee,
+            stateDeliveryFee: selectedState?.default_delivery_fee,
+        });
+
+        return { deliveryFee, installationFee: 0, inspectionFee: 0 };
+    };
+
+    const getBuyNowBundleServiceFees = () => {
+        const fees = aggregateBundleServiceFees(
+            formData.selectedBundles,
+            (bundle) => extractBundleLineItems(bundle).serviceRows
+        );
+        if (!buyNowMaterialFeeApplies(formData.installerChoice, formData.includeInstallationMaterial)) {
+            return { ...fees, materialCost: 0 };
+        }
+        return fees;
+    };
+
+    /**
+     * Order-list rows for Summary (step 7) and Invoice (step 7.5).
+     * Catalog sub-total excludes fees; invoice step can include fee line items.
+     */
+    const buildBuyNowOrderListSections = ({ includeFeeLineItems = false, resolvedFees = null } = {}) => {
+        const bundlesTotal = formData.selectedBundles.reduce((sum, b) => sum + (b.price * (b.quantity || 1)), 0);
+        const productsTotal = formData.selectedProducts.reduce((sum, p) => sum + (p.price * (p.quantity || 1)), 0);
+        const itemsSubtotal = bundlesTotal + productsTotal;
+        const basePrice = itemsSubtotal > 0 ? itemsSubtotal : formData.selectedProductPrice;
+        const feeFallback = formData.selectedBundles.length > 0
+            ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
+            : (resolvedFees || getBuyNowStateFeeFallback());
+
+        const bundleSections = formData.selectedBundles.map((sb) => {
+            const bundleQty = sb.quantity || 1;
+            const bundleObj = sb.bundle;
+            const bundleName = bundleObj?.title || bundleObj?.name || `Bundle #${sb.id}`;
+            const bundleTotalPrice = (sb.price || 0) * bundleQty;
+            const { orderListItems, invoiceItems } = extractBundleLineItems(bundleObj);
+            const sourceItems = includeFeeLineItems ? invoiceItems : orderListItems;
+
+            let rows;
+            if (sourceItems.length > 0) {
+                rows = mapBundleLineItemsToRows(sourceItems, bundleQty, sb.id);
+            } else {
+                rows = [{
+                    id: `b-${sb.id}`,
+                    description: bundleName,
+                    quantity: bundleQty,
+                    unit: 'Nos',
+                    rate: sb.price || 0,
+                    totalCost: bundleTotalPrice,
+                }];
+            }
+
+            if (includeFeeLineItems) {
+                const bundleServiceFees = aggregateBundleServiceFees(
+                    [sb],
+                    (bundle) => extractBundleLineItems(bundle).serviceRows
+                );
+                const ownInstaller = formData.installerChoice === 'own';
+                const bundleFeeSlice = {
+                    deliveryFee: bundleServiceFees.deliveryFee || feeFallback.deliveryFee,
+                    installationFee: bundleServiceFees.installationFee,
+                    inspectionFee: bundleServiceFees.inspectionFee,
+                    materialCost: buyNowMaterialFeeApplies(formData.installerChoice, formData.includeInstallationMaterial)
+                        ? bundleServiceFees.materialCost
+                        : 0,
+                };
+                rows = appendResolvedFeeRows(rows, bundleFeeSlice, sb.id);
+            }
+
+            return { bundleName, rows, subTotal: bundleTotalPrice };
+        });
+
+        const productRows = buildPreCheckoutStandaloneProductRows({
+            selectedProducts: formData.selectedProducts,
+            selectedMaterials,
+            allMaterialsMap,
+            categoryMaterials,
+            hasSelectedBundles: formData.selectedBundles.length > 0,
+        });
+
+        if (bundleSections.length === 0 && productRows.length === 0 && (formData.selectedBundle || formData.selectedProduct)) {
+            const label = formData.selectedBundle?.title || formData.selectedProduct?.title || formData.selectedProduct?.name || 'Item';
+            productRows.push({ id: 'single', description: label, quantity: 1, unit: 'Nos', rate: basePrice, totalCost: basePrice });
+        }
+
+        const catalogSubtotal = bundleSections.reduce((s, sec) => s + sec.subTotal, 0)
+            + productRows.reduce((s, r) => s + r.totalCost, 0);
+
+        return {
+            bundleSections,
+            productRows,
+            catalogSubtotal: catalogSubtotal || basePrice || 0,
+            basePrice,
+        };
+    };
+
+    /** Line items + payment summary for invoice (step 7.5) and payment amount (step 5). */
+    const buildBuyNowInvoiceViewModel = (detailsOverride = null) => {
+        const details = detailsOverride || invoiceDetails;
+        const vatPercent = Number(details?.vat_percentage || checkoutSettings?.vat_percentage || 7.5);
+        const insurancePercent = resolveCheckoutInsurancePercent(checkoutSettings, details);
+        const hasBundles = (formData.selectedBundles || []).length > 0;
+        // Bundles: fees only from Bundle Mgt → Invoice fees. Never state/global checkout fallback.
+        const stateFeeFallback = hasBundles
+            ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
+            : getBuyNowStateFeeFallback();
+        const bundleServiceFees = getBuyNowBundleServiceFees();
+        const { bundleSections, productRows, catalogSubtotal } = buildBuyNowOrderListSections({
+            resolvedFees: stateFeeFallback,
+        });
+
+        let bundleInvoiceSections = bundleSections.map((sec) => ({
+            bundleName: sec.bundleName,
+            allRows: sec.rows,
+            subTotal: sec.subTotal,
+        }));
+
+        let productInvoiceRows = productRows;
+
+        if (Array.isArray(details?.product_line_items) && details.product_line_items.length > 0) {
+            productInvoiceRows = mapApiLineItemsToInvoiceRows(details.product_line_items, 'checkout');
+            const bundleLineItems = productInvoiceRows.filter((r) => !invoiceRowsIncludeFee([r], 'delivery')
+                && !invoiceRowsIncludeFee([r], 'installation')
+                && !invoiceRowsIncludeFee([r], 'inspection')
+                && !invoiceRowsIncludeFee([r], 'material'));
+            if (bundleLineItems.length > 0 && bundleInvoiceSections.length > 0) {
+                bundleInvoiceSections = [{
+                    ...bundleInvoiceSections[0],
+                    allRows: bundleLineItems.map((row) => ({
+                        id: row.id,
+                        description: row.description,
+                        quantity: row.quantity,
+                        unit: row.unit,
+                        rate: row.rate,
+                        totalCost: row.totalCost,
+                    })),
+                }];
+            }
+        }
+
+        const pricingDetails = {
+            ...(details || {}),
+            items_subtotal_before_discount: Number(details?.items_subtotal_before_discount) > 0
+                ? Number(details.items_subtotal_before_discount)
+                : catalogSubtotal,
+            outright_discount_percentage: Number(details?.outright_discount_percentage ?? 10),
+            insurance_fee: Number(details?.insurance_fee) > 0
+                ? Number(details.insurance_fee)
+                : (formData.includeInsurance
+                    ? (catalogSubtotal * insurancePercent) / 100
+                    : 0),
+        };
+
+        // For bundles, never inherit stale/global API fee fields — only bundle invoice-tab amounts.
+        if (hasBundles) {
+            pricingDetails.delivery_fee = Number(bundleServiceFees.deliveryFee || 0);
+            pricingDetails.installation_fee = Number(bundleServiceFees.installationFee || 0);
+            pricingDetails.inspection_fee = Number(bundleServiceFees.inspectionFee || 0);
+            pricingDetails.material_cost = Number(bundleServiceFees.materialCost || 0);
+        }
+
+        const invoiceTotals = computeBuyNowInvoiceTotals({
+            invoiceDetails: pricingDetails,
+            productInvoiceRows,
+            bundleNetTotal: 0,
+            catalogSubtotal,
+            vatPercent,
+            bundleServiceFees,
+            stateFeeFallback,
+            bundleFeesOnly: hasBundles,
+        });
+
+        return {
+            bundleInvoiceSections,
+            productInvoiceRows,
+            invoiceTotals,
+            vatPercent,
+            insurancePercent,
+            catalogSubtotal,
+        };
+    };
+
+    const renderBuyNowContactForm = () => (
+        <div className="mb-8 p-5 rounded-xl border border-[#273e8e]/25 bg-[#f8faff]">
+            <h3 className="text-lg font-bold text-[#273e8e] mb-1 flex items-center gap-2">
+                <User size={22} className="shrink-0" />
+                Contact Information
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Full name *</label>
+                    <input
+                        type="text"
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.fullName}
+                        onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                        placeholder="As on your ID / account"
+                    />
+                </div>
+                <div>
+                    <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+                        <Phone size={14} /> Phone (WhatsApp) *
+                    </label>
+                    <input
+                        type="tel"
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        placeholder="e.g. 0803 …"
+                    />
+                </div>
+            </div>
+            {states.length > 0 ? (
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
+                    <select
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.stateId || ''}
+                        onChange={(e) => {
+                            const stateId = e.target.value ? Number(e.target.value) : null;
+                            const selectedState = states.find((s) => s.id === stateId);
+                            setFormData({
+                                ...formData,
+                                state: selectedState?.name || '',
+                                stateId,
+                            });
+                            setSelectedStateId(stateId);
+                        }}
+                    >
+                        <option value="">Select state</option>
+                        {states.filter((s) => s.is_active).map((state) => (
+                            <option key={state.id} value={state.id}>{state.name}</option>
+                        ))}
+                    </select>
+                </div>
+            ) : (
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
+                    <input
+                        type="text"
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.state}
+                        onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                        placeholder="State"
+                    />
+                </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">House / plot no. *</label>
+                    <input
+                        type="text"
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.houseNo}
+                        onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Street name *</label>
+                    <input
+                        type="text"
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.streetName}
+                        onChange={(e) => setFormData({ ...formData, streetName: e.target.value })}
+                    />
+                </div>
+            </div>
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Landmark (optional)</label>
+                <input
+                    type="text"
+                    className="w-full p-3 border border-gray-300 rounded-lg"
+                    value={formData.landmark}
+                    onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
+                />
+            </div>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Floors (optional)</label>
+                    <input
+                        type="number"
+                        min={0}
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.floors}
+                        onChange={(e) => setFormData({ ...formData, floors: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Rooms (optional)</label>
+                    <input
+                        type="number"
+                        min={0}
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        value={formData.rooms}
+                        onChange={(e) => setFormData({ ...formData, rooms: e.target.value })}
+                    />
+                </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer mb-2">
+                <input
+                    type="checkbox"
+                    checked={formData.isGatedEstate}
+                    onChange={(e) => setFormData({ ...formData, isGatedEstate: e.target.checked })}
+                    className="h-4 w-4 text-[#273e8e] rounded"
+                />
+                <span className="text-sm text-gray-700">Property is in a gated estate</span>
+            </label>
+            {formData.isGatedEstate && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <input
+                        type="text"
+                        placeholder="Estate name *"
+                        className="p-3 border rounded-lg"
+                        value={formData.estateName}
+                        onChange={(e) => setFormData({ ...formData, estateName: e.target.value })}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Estate address *"
+                        className="p-3 border rounded-lg"
+                        value={formData.estateAddress}
+                        onChange={(e) => setFormData({ ...formData, estateAddress: e.target.value })}
+                    />
+                </div>
+            )}
+            {!buyNowContactComplete() && (
+                <p className="text-sm text-amber-700 mt-3">Fill name, phone, state, house no., and street to continue.</p>
+            )}
+        </div>
+    );
+
+    const renderBuyNowContactSummary = () => {
+        const addressLine = formatBuyNowInstallationAddress();
+        return (
+            <div className="mb-6 p-5 rounded-xl border border-gray-200 bg-gray-50">
+                <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wide mb-3">
+                    Customer details
+                </h3>
+                <div className="space-y-2 text-sm text-gray-700">
+                    <p className="flex items-start gap-2">
+                        <User size={16} className="shrink-0 mt-0.5 text-[#273e8e]" />
+                        <span><span className="font-medium text-gray-900">Contact name:</span> {formData.fullName || '—'}</span>
+                    </p>
+                    <p className="flex items-start gap-2">
+                        <Phone size={16} className="shrink-0 mt-0.5 text-[#273e8e]" />
+                        <span><span className="font-medium text-gray-900">Phone:</span> {formData.phone || '—'}</span>
+                    </p>
+                    <p className="flex items-start gap-2">
+                        <MapPin size={16} className="shrink-0 mt-0.5 text-[#273e8e]" />
+                        <span><span className="font-medium text-gray-900">Address:</span> {addressLine || '—'}</span>
+                    </p>
+                </div>
+            </div>
+        );
+    };
+
     const enrichBundlesForOrderSummary = async () => {
         const token = localStorage.getItem('access_token');
         const toEnrich = formData.selectedBundles;
@@ -3800,6 +4720,103 @@ const BuyNowFlow = () => {
         } finally {
             setEnrichingBundles(false);
         }
+    };
+
+    const renderInstallationDatePicker = () => {
+        if (formData.optionType === 'audit') return null;
+
+        const ownInstaller = formData.installerChoice === 'own';
+        const uniqueDates = uniqueCalendarDates(calendarSlots).slice(0, 9);
+
+        return (
+            <div className="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h3 className="font-bold text-[#273e8e] mb-3 flex items-center">
+                    <Calendar size={20} className="mr-2" />
+                    {ownInstaller ? 'Available Delivery Dates' : 'Available Installation Dates'}
+                </h3>
+                {ownInstaller ? (
+                    <>
+                        <p className="text-sm text-gray-600 mb-3">
+                            <strong>Estimated dates:</strong> These calendar options are typical availability windows. Final delivery date and time are confirmed after payment and scheduled by our team.
+                        </p>
+                        <p className="text-sm text-gray-600 mb-3">
+                            Pick your preferred delivery date below:
+                        </p>
+                    </>
+                ) : (
+                    <>
+                        <p className="text-sm text-gray-600 mb-3">
+                            <strong>Estimated dates:</strong> these calendar options are typical availability windows. Final installation date and time are confirmed after payment and a quick site coordination call.
+                        </p>
+                        <p className="text-sm text-gray-600 mb-3">
+                            Slots usually open from 72 hours after payment confirmation. Pick your preferred day below (exact time is scheduled with our team):
+                        </p>
+                    </>
+                )}
+
+                {calendarSlotsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+                        <Loader className="animate-spin" size={16} />
+                        Loading available dates…
+                    </div>
+                ) : uniqueDates.length === 0 ? (
+                    <p className="text-sm text-amber-700 py-2">
+                        No dates available right now. You can still proceed — our team will contact you to schedule.
+                    </p>
+                ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                        {uniqueDates.map((slot, idx) => {
+                            const dateStr = new Date(`${slot.date}T12:00:00`).toLocaleDateString('en-NG', {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric',
+                            });
+                            const slotDayKey = String(slot.date).slice(0, 10);
+                            const selectedDayKey = selectedSlot?.date
+                                ? String(selectedSlot.date).slice(0, 10)
+                                : '';
+                            const isSelected = selectedDayKey === slotDayKey;
+
+                            return (
+                                <button
+                                    key={`${slotDayKey}-${idx}`}
+                                    type="button"
+                                    disabled={!slot.available}
+                                    onClick={() => {
+                                        if (!slot.available) return;
+                                        const firstSlotForDate = calendarSlots.find(
+                                            (s) =>
+                                                String(s.date).slice(0, 10) === slotDayKey && s.available
+                                        );
+                                        if (firstSlotForDate) setSelectedSlot(firstSlotForDate);
+                                    }}
+                                    className={`p-3 rounded-lg text-sm border transition-colors ${
+                                        isSelected
+                                            ? 'border-[#273e8e] bg-[#273e8e] text-white'
+                                            : slot.available
+                                                ? 'border-blue-300 hover:bg-blue-100 text-gray-800'
+                                                : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <div className="font-medium text-center">{dateStr}</div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {selectedSlot?.date && (
+                    <p className="mt-3 text-sm text-[#273e8e] font-medium">
+                        Selected {ownInstaller ? 'delivery' : 'installation'} date:{' '}
+                        {new Date(`${String(selectedSlot.date).slice(0, 10)}T12:00:00`).toLocaleDateString('en-NG', {
+                            weekday: 'long',
+                            month: 'long',
+                            day: 'numeric',
+                        })}
+                    </p>
+                )}
+            </div>
+        );
     };
 
     /** Shown after any audit request (home / office / commercial) — no order summary or invoice. */
@@ -3853,65 +4870,8 @@ const BuyNowFlow = () => {
             return renderAuditFlowSuccessScreen();
         }
 
-        // ── STEP 7: ORDER SUMMARY ONLY (mirrors BNPL renderStep6_5 exactly) ──
-        const bundlesTotal = formData.selectedBundles.reduce((sum, b) => sum + (b.price * (b.quantity || 1)), 0);
-        const productsTotal = formData.selectedProducts.reduce((sum, p) => sum + (p.price * (p.quantity || 1)), 0);
-        const itemsSubtotal = bundlesTotal + productsTotal;
-        const basePrice = itemsSubtotal > 0 ? itemsSubtotal : formData.selectedProductPrice;
-
-        const bundleSections = formData.selectedBundles.map((sb) => {
-            const bundleQty = sb.quantity || 1;
-            const bundleObj = sb.bundle;
-            const bundleName = bundleObj?.title || bundleObj?.name || `Bundle #${sb.id}`;
-            const bundleTotalPrice = (sb.price || 0) * bundleQty;
-            const { orderListItems } = extractBundleLineItems(bundleObj);
-
-            let rows;
-            if (orderListItems.length > 0) {
-                rows = orderListItems.map((item, idx) => ({
-                    id: `b-${sb.id}-${idx}`,
-                    description: item.description,
-                    quantity: item.quantityApplies === false
-                        ? 'NIL'
-                        : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty),
-                    unit: item.unit,
-                    rate: item.rate,
-                    totalCost: item.rate * (item.quantityApplies === false
-                        ? 1
-                        : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty)),
-                }));
-            } else {
-                rows = [{
-                    id: `b-${sb.id}`,
-                    description: bundleName,
-                    quantity: bundleQty,
-                    unit: 'Nos',
-                    rate: sb.price || 0,
-                    totalCost: bundleTotalPrice,
-                }];
-            }
-            return { bundleName, rows, subTotal: bundleTotalPrice };
-        });
-
-        const productRows = formData.selectedProducts.map((sp) => {
-            const qty = sp.quantity || 1;
-            const unitPrice = sp.price || 0;
-            return {
-                id: `p-${sp.id}`,
-                description: sp.product?.title || sp.product?.name || `Product #${sp.id}`,
-                quantity: qty,
-                unit: 'Nos',
-                rate: unitPrice,
-                totalCost: unitPrice * qty,
-            };
-        });
-
-        if (bundleSections.length === 0 && productRows.length === 0 && (formData.selectedBundle || formData.selectedProduct)) {
-            const label = formData.selectedBundle?.title || formData.selectedProduct?.title || formData.selectedProduct?.name || 'Item';
-            productRows.push({ id: 'single', description: label, quantity: 1, unit: 'Nos', rate: basePrice, totalCost: basePrice });
-        }
-
-        const overallSubTotal = bundleSections.reduce((s, sec) => s + sec.subTotal, 0) + productRows.reduce((s, r) => s + r.totalCost, 0);
+        // ── STEP 7: ORDER SUMMARY (contact info + order list; same rows/prices as Invoice) ──
+        const { bundleSections, productRows, catalogSubtotal, basePrice } = buildBuyNowOrderListSections();
 
         return (
             <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
@@ -3920,18 +4880,7 @@ const BuyNowFlow = () => {
                 </button>
                 <h2 className="text-2xl font-bold mb-4 text-[#273e8e] border-b pb-4">Order Summary</h2>
 
-                <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900">
-                    <strong>Next step:</strong>{' '}
-                    {formData.installerChoice === 'own' ? (
-                        <>
-                            On the invoice screen, you will enter your contact information and delivery address before confirming the order and making payment.
-                        </>
-                    ) : (
-                        <>
-                            On the invoice screen, you will enter your contact information and address before confirming the order and making payment.
-                        </>
-                    )}
-                </div>
+                {renderBuyNowContactForm()}
 
                 {enrichingBundles && (
                     <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
@@ -4020,7 +4969,7 @@ const BuyNowFlow = () => {
                 {(bundleSections.length + (productRows.length > 0 ? 1 : 0)) > 1 && (
                     <div className="border-t-2 border-[#273e8e] pt-3 mb-6 flex justify-between items-center">
                         <span className="font-bold text-lg text-gray-800">Overall Sub-Total</span>
-                        <span className="font-bold text-xl text-[#273e8e]">₦{formatAmount(overallSubTotal || basePrice || 0)}</span>
+                        <span className="font-bold text-xl text-[#273e8e]">₦{formatAmount(catalogSubtotal || basePrice || 0)}</span>
                     </div>
                 )}
 
@@ -4031,8 +4980,19 @@ const BuyNowFlow = () => {
                 </div>
 
                 <button
-                    onClick={() => setStep(7.5)}
-                    className="w-full bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
+                    onClick={() => {
+                        if (!buyNowContactComplete()) {
+                            alert('Please complete your contact information before proceeding to the invoice.');
+                            return;
+                        }
+                        setStep(7.5);
+                    }}
+                    disabled={!buyNowContactComplete()}
+                    className={`w-full py-4 rounded-xl font-bold transition-colors ${
+                        buyNowContactComplete()
+                            ? 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
+                            : 'bg-gray-400 text-white cursor-not-allowed'
+                    }`}
                 >
                     Proceed to Invoice
                 </button>
@@ -4045,100 +5005,29 @@ const BuyNowFlow = () => {
             return renderAuditFlowSuccessScreen();
         }
 
-        // Invoice step (mirrors BNPL renderStep6_75 exactly)
-        const bundlesTotal = formData.selectedBundles.reduce((sum, b) => sum + (b.price * (b.quantity || 1)), 0);
-        const productsTotal = formData.selectedProducts.reduce((sum, p) => sum + (p.price * (p.quantity || 1)), 0);
-        const itemsSubtotal = bundlesTotal + productsTotal;
-        const basePrice = itemsSubtotal > 0 ? itemsSubtotal : formData.selectedProductPrice;
+        const {
+            bundleInvoiceSections,
+            productInvoiceRows,
+            invoiceTotals,
+            vatPercent,
+            insurancePercent,
+            catalogSubtotal,
+        } = buildBuyNowInvoiceViewModel();
 
-        // Insurance should be calculated after any outright discount is applied to the product price.
-        // The API returns the discounted product price as `invoiceDetails.product_price` after checkout.
-        const productPriceForInsurance =
-            invoiceDetails?.product_price != null ? Number(invoiceDetails.product_price) : Number(basePrice || 0);
-        const insuranceFee = formData.includeInsurance
-            ? (productPriceForInsurance * 3) / 100
-            : 0;
-
-        const vatPercent = 7.5;
-
-        const bundleInvoiceSections = formData.selectedBundles.map((sb) => {
-            const bundleQty = sb.quantity || 1;
-            const bundleObj = sb.bundle;
-            const bundleName = bundleObj?.title || bundleObj?.name || `Bundle #${sb.id}`;
-            const bundleTotalPrice = (sb.price || 0) * bundleQty;
-            const { invoiceItems, serviceRows, orderListItems } = extractBundleLineItems(bundleObj);
-            const pricedOrderLines = orderListItems.filter((i) => i.rate > 0);
-            let displayItems = invoiceItems;
-            if (pricedOrderLines.length === 0 && serviceRows.length > 0) {
-                displayItems = [
-                    {
-                        description: bundleName,
-                        quantity: 1,
-                        unit: 'Nos',
-                        quantityApplies: true,
-                        rate: sb.price || 0,
-                    },
-                    ...serviceRows,
-                ];
-            }
-
-            let allRows;
-            if (displayItems.length > 0) {
-                allRows = displayItems.map((item, idx) => ({
-                    id: `inv-${sb.id}-${idx}`,
-                    description: item.description,
-                    quantity: item.quantityApplies === false
-                        ? 'NIL'
-                        : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty),
-                    unit: item.unit,
-                    rate: item.rate,
-                    totalCost: item.rate * (item.quantityApplies === false
-                        ? 1
-                        : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty)),
-                }));
-            } else {
-                allRows = [{
-                    id: `inv-${sb.id}-main`,
-                    description: bundleName,
-                    quantity: bundleQty,
-                    unit: 'Nos',
-                    rate: sb.price || 0,
-                    totalCost: bundleTotalPrice,
-                    isBold: true,
-                }];
-            }
-
-            const feesSum = serviceRows.reduce(
-                (s, r) => s + (r.rate * (r.quantityApplies === false ? 1 : r.quantity)),
-                0
-            );
-            const sectionNetTotal = bundleTotalPrice + feesSum;
-
-            return { bundleName, allRows, netTotal: sectionNetTotal };
-        });
-
-        const productInvoiceRows = formData.selectedProducts.map((p) => {
-            const qty = p.quantity || 1;
-            const unitPrice = p.price || 0;
-            return {
-                id: `inv-p-${p.id}`,
-                description: p.product?.title || p.product?.name || `Product #${p.id}`,
-                quantity: qty,
-                unit: 'Nos',
-                rate: unitPrice,
-                totalCost: unitPrice * qty,
-            };
-        });
-
-        if (bundleInvoiceSections.length === 0 && productInvoiceRows.length === 0 && (formData.selectedBundle || formData.selectedProduct)) {
-            const label = formData.selectedBundle?.title || formData.selectedProduct?.title || formData.selectedProduct?.name || 'Item';
-            productInvoiceRows.push({ id: 'inv-single', description: label, quantity: 1, unit: 'Nos', rate: basePrice, totalCost: basePrice });
-        }
-
-        const allItemsTotal = bundleInvoiceSections.reduce((s, sec) => s + sec.netTotal, 0) + productInvoiceRows.reduce((s, r) => s + r.totalCost, 0);
-        const overallNetTotal = allItemsTotal + insuranceFee;
-        const overallVat = (overallNetTotal * vatPercent) / 100;
-        const overallGrandTotal = overallNetTotal + overallVat;
+        const {
+            subTotalBeforeDiscount,
+            effectiveOutrightDiscount,
+            outrightDiscountPct,
+            discountedSubTotal,
+            deliveryFee,
+            installationFee,
+            materialCost,
+            inspectionFee,
+            totalAmount,
+            insuranceAmount,
+            vatAmount,
+            grandTotal,
+        } = invoiceTotals;
 
         return (
             <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
@@ -4146,248 +5035,55 @@ const BuyNowFlow = () => {
                     <ArrowLeft size={16} className="mr-2" /> Back
                 </button>
 
-                <div className="mb-8 p-5 rounded-xl border border-[#273e8e]/25 bg-[#f8faff]">
-                    <h3 className="text-lg font-bold text-[#273e8e] mb-1 flex items-center gap-2">
-                        <User size={22} className="shrink-0" />
-                        Contact Information
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Full name *</label>
-                            <input
-                                type="text"
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.fullName}
-                                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                                placeholder="As on your ID / account"
-                            />
-                        </div>
-                        <div>
-                            <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
-                                <Phone size={14} /> Phone (WhatsApp) *
-                            </label>
-                            <input
-                                type="tel"
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.phone}
-                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                placeholder="e.g. 0803 …"
-                            />
-                        </div>
-                    </div>
-                    {states.length > 0 ? (
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
-                            <select
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.stateId || ''}
-                                onChange={(e) => {
-                                    const stateId = e.target.value ? Number(e.target.value) : null;
-                                    const selectedState = states.find((s) => s.id === stateId);
-                                    setFormData({
-                                        ...formData,
-                                        state: selectedState?.name || '',
-                                        stateId,
-                                    });
-                                    setSelectedStateId(stateId);
-                                }}
-                            >
-                                <option value="">Select state</option>
-                                {states.filter((s) => s.is_active).map((state) => (
-                                    <option key={state.id} value={state.id}>{state.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    ) : (
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
-                            <input
-                                type="text"
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.state}
-                                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                                placeholder="State"
-                            />
-                        </div>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">House / plot no. *</label>
-                            <input
-                                type="text"
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.houseNo}
-                                onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Street name *</label>
-                            <input
-                                type="text"
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.streetName}
-                                onChange={(e) => setFormData({ ...formData, streetName: e.target.value })}
-                            />
-                        </div>
-                    </div>
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Landmark (optional)</label>
-                        <input
-                            type="text"
-                            className="w-full p-3 border border-gray-300 rounded-lg"
-                            value={formData.landmark}
-                            onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Floors (optional)</label>
-                            <input
-                                type="number"
-                                min={0}
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.floors}
-                                onChange={(e) => setFormData({ ...formData, floors: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Rooms (optional)</label>
-                            <input
-                                type="number"
-                                min={0}
-                                className="w-full p-3 border border-gray-300 rounded-lg"
-                                value={formData.rooms}
-                                onChange={(e) => setFormData({ ...formData, rooms: e.target.value })}
-                            />
-                        </div>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer mb-2">
-                        <input
-                            type="checkbox"
-                            checked={formData.isGatedEstate}
-                            onChange={(e) => setFormData({ ...formData, isGatedEstate: e.target.checked })}
-                            className="h-4 w-4 text-[#273e8e] rounded"
-                        />
-                        <span className="text-sm text-gray-700">Property is in a gated estate</span>
-                    </label>
-                    {formData.isGatedEstate && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                            <input
-                                type="text"
-                                placeholder="Estate name *"
-                                className="p-3 border rounded-lg"
-                                value={formData.estateName}
-                                onChange={(e) => setFormData({ ...formData, estateName: e.target.value })}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Estate address *"
-                                className="p-3 border rounded-lg"
-                                value={formData.estateAddress}
-                                onChange={(e) => setFormData({ ...formData, estateAddress: e.target.value })}
-                            />
-                        </div>
-                    )}
-                    {!buyNowContactComplete() && (
-                        <p className="text-sm text-amber-700 mt-3">Fill name, phone, state, house no., and street to continue.</p>
-                    )}
-                </div>
+                {orderId ? (
+                    <p className="text-sm font-semibold text-[#273e8e] mb-2">Invoice #{orderId}</p>
+                ) : null}
+                <h2 className="text-2xl font-bold mb-4 text-[#273e8e] border-b pb-4">Invoice</h2>
 
-                <h2 className="text-2xl font-bold mb-6 text-[#273e8e] border-b pb-4">Invoice</h2>
+                {renderBuyNowContactSummary()}
 
                 {bundleInvoiceSections.map((section, sIdx) => (
                     <div key={`inv-section-${sIdx}`} className="mb-8">
-                        <h3 className="text-base font-semibold text-[#273e8e] mb-2 uppercase tracking-wide">
-                            Invoice — {section.bundleName}
+                        <h3 className="text-base font-semibold text-[#273e8e] mb-3 uppercase tracking-wide">
+                            Order list — {section.bundleName}
                         </h3>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse text-sm">
-                                <thead>
-                                    <tr className="border-b-2 border-gray-300 bg-gray-50">
-                                        <th className="py-3 px-2 font-semibold text-gray-700">ITEM DESCRIPTION</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-center w-16">QTY</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-center w-16">UNIT</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-right w-28">RATE</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-right w-32">TOTAL COST</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {section.allRows.map((row) => (
-                                        <tr key={row.id} className={`border-b border-gray-100 ${row.isDetail ? 'bg-gray-50/50' : ''}`}>
-                                            <td className={`py-3 px-2 ${row.isBold ? 'font-semibold text-gray-900' : row.isDetail ? 'text-gray-500 text-xs' : 'text-gray-800'}`}>{stripFeeVisibilityPrefix(row.description)}</td>
-                                            <td className="py-3 px-2 text-center">{row.quantity}</td>
-                                            <td className="py-3 px-2 text-center text-gray-600">{row.unit}</td>
-                                            <td className="py-3 px-2 text-right">{row.isDetail ? <span className="text-gray-400 text-xs">Included</span> : (row.rate > 0 ? `₦${formatAmount(row.rate)}` : '—')}</td>
-                                            <td className="py-3 px-2 text-right font-semibold">{row.isDetail ? '' : (row.totalCost > 0 ? `₦${formatAmount(row.totalCost)}` : '—')}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                <tfoot>
-                                    <tr className="border-t-2 border-gray-300">
-                                        <td colSpan={4} className="py-3 px-2 font-bold text-gray-800">Sum-Total</td>
-                                        <td className="py-3 px-2 text-right font-bold">₦{formatAmount(section.netTotal)}</td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
+                        <BuyNowLineItemsTable rows={section.allRows} />
                     </div>
                 ))}
 
                 {productInvoiceRows.length > 0 && (
-                    <div className="mb-8">
-                        {bundleInvoiceSections.length > 0 && (
-                            <h3 className="text-base font-semibold text-[#273e8e] mb-2 uppercase tracking-wide">
-                                Individual Products
-                            </h3>
-                        )}
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse text-sm">
-                                <thead>
-                                    <tr className="border-b-2 border-gray-300 bg-gray-50">
-                                        <th className="py-3 px-2 font-semibold text-gray-700">ITEM DESCRIPTION</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-center w-16">QTY</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-center w-16">UNIT</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-right w-28">RATE</th>
-                                        <th className="py-3 px-2 font-semibold text-gray-700 text-right w-32">TOTAL COST</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {productInvoiceRows.map((row) => (
-                                        <tr key={row.id} className="border-b border-gray-100">
-                                            <td className="py-3 px-2 text-gray-800">{stripFeeVisibilityPrefix(row.description)}</td>
-                                            <td className="py-3 px-2 text-center">{row.quantity}</td>
-                                            <td className="py-3 px-2 text-center text-gray-600">{row.unit}</td>
-                                            <td className="py-3 px-2 text-right">₦{formatAmount(row.rate)}</td>
-                                            <td className="py-3 px-2 text-right font-semibold">₦{formatAmount(row.totalCost)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                    <div className="mb-6">
+                        <h3 className="text-base font-semibold text-[#273e8e] mb-3 uppercase tracking-wide">
+                            {bundleInvoiceSections.length > 0 ? 'Additional products' : 'Order items'}
+                        </h3>
+                        <BuyNowLineItemsTable rows={productInvoiceRows} />
                     </div>
                 )}
 
-                {insuranceFee > 0 && (
-                    <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg text-sm text-yellow-800 mb-4">
-                        Insurance Fee (3%): ₦{formatAmount(insuranceFee)} (included in overall total)
-                    </div>
-                )}
-
-                <div className="bg-[#273e8e]/5 border border-[#273e8e]/20 rounded-lg p-4 mb-6">
-                    <div className="flex justify-between items-center text-sm text-gray-700 mb-1">
-                        <span>Sum-Total</span>
-                        <span className="font-semibold">₦{formatAmount(overallNetTotal)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm text-gray-700 mb-2">
-                        <span>VAT ({vatPercent}%)</span>
-                        <span className="font-semibold">₦{formatAmount(overallVat)}</span>
-                    </div>
-                    <div className="flex justify-between items-center border-t border-[#273e8e]/20 pt-2">
-                        <span className="font-bold text-lg text-[#273e8e]">Grand Total</span>
-                        <span className="font-bold text-xl text-[#273e8e]">₦{formatAmount(overallGrandTotal)}</span>
-                    </div>
+                <div className="flex justify-between items-center border-t-2 border-[#273e8e] pt-3 mb-6">
+                    <span className="font-bold text-lg text-gray-800">Order Sub-Total</span>
+                    <span className="font-bold text-xl text-[#273e8e] tabular-nums">₦{formatAmount(catalogSubtotal)}</span>
                 </div>
+
+                <PaymentSummaryCard
+                    subTotalBeforeDiscount={subTotalBeforeDiscount}
+                    effectiveOutrightDiscount={effectiveOutrightDiscount}
+                    outrightDiscountPct={outrightDiscountPct}
+                    discountedSubTotal={discountedSubTotal}
+                    deliveryFee={deliveryFee}
+                    installationFee={installationFee}
+                    materialCost={materialCost}
+                    inspectionFee={inspectionFee}
+                    totalAmount={totalAmount}
+                    vatAmount={vatAmount}
+                    vatPercent={vatPercent}
+                    insuranceAmount={insuranceAmount}
+                    insurancePercent={insurancePercent}
+                    grandTotal={grandTotal}
+                    showInsurance={formData.includeInsurance}
+                />
+
+                {renderInstallationDatePicker()}
 
                 <button
                     onClick={handleCheckoutSubmit}
@@ -4503,7 +5199,9 @@ const BuyNowFlow = () => {
                 !formData.landmark?.trim() ||
                 !formData.floors ||
                 !formData.rooms ||
-                (formData.isGatedEstate && (!formData.estateName || !formData.estateAddress));
+                (formData.isGatedEstate && (!formData.estateName || !formData.estateAddress)) ||
+                !formData.preferredAuditDate ||
+                !formData.preferredAuditTime;
 
             const officeInvalidBn =
                 loading ||
@@ -4515,7 +5213,9 @@ const BuyNowFlow = () => {
                 !formData.landmark?.trim() ||
                 !formData.buildingType?.trim() ||
                 !formData.floors ||
-                !formData.officeSpaces;
+                !formData.officeSpaces ||
+                !formData.preferredAuditDate ||
+                !formData.preferredAuditTime;
 
             const commercialInvalidBn =
                 loading ||
@@ -4525,7 +5225,9 @@ const BuyNowFlow = () => {
                 !formData.state ||
                 !formData.commercialAddress?.trim() ||
                 !formData.landmark?.trim() ||
-                !formData.facilityDescription?.trim();
+                !formData.facilityDescription?.trim() ||
+                !formData.preferredAuditDate ||
+                !formData.preferredAuditTime;
 
             const submitDisabledBn = isCommercial ? commercialInvalidBn : isOffice ? officeInvalidBn : homeInvalidBn;
 
@@ -4877,6 +5579,13 @@ const BuyNowFlow = () => {
                             </>
                         )}
 
+                        <AuditPreferredScheduleFields
+                            preferredAuditDate={formData.preferredAuditDate}
+                            preferredAuditTime={formData.preferredAuditTime}
+                            onDateChange={(value) => setFormData({ ...formData, preferredAuditDate: value })}
+                            onTimeChange={(value) => setFormData({ ...formData, preferredAuditTime: value })}
+                        />
+
                         <button
                             type="submit"
                             disabled={submitDisabledBn}
@@ -4903,321 +5612,52 @@ const BuyNowFlow = () => {
             );
         }
 
-        // Non-audit: show confirmed invoice using extractBundleLineItems + admin-configured fees only
-        const vatPercent = 7.5;
-        const apiInsurance = invoiceDetails?.insurance_fee ? Number(invoiceDetails.insurance_fee) : 0;
-        const outrightDiscount = Number(invoiceDetails?.outright_discount_amount || 0);
-        const outrightDiscountPct = Number(invoiceDetails?.outright_discount_percentage || 0);
-
-        const bundleInvoiceSections5 = formData.selectedBundles.map((sb) => {
-            const bundleQty = sb.quantity || 1;
-            const bundleObj = sb.bundle;
-            const bundleName = bundleObj?.title || bundleObj?.name || `Bundle #${sb.id}`;
-            const bundleTotalPrice = (sb.price || 0) * bundleQty;
-            const { invoiceItems, serviceRows, orderListItems } = extractBundleLineItems(bundleObj);
-            const pricedOrderLines = orderListItems.filter((i) => i.rate > 0);
-            let displayItems = invoiceItems;
-            if (pricedOrderLines.length === 0 && serviceRows.length > 0) {
-                displayItems = [
-                    {
-                        description: bundleName,
-                        quantity: 1,
-                        unit: 'Nos',
-                        quantityApplies: true,
-                        rate: sb.price || 0,
-                    },
-                    ...serviceRows,
-                ];
-            }
-
-            let allRows;
-            if (displayItems.length > 0) {
-                allRows = displayItems.map((item, idx) => ({
-                    id: `inv5-${sb.id}-${idx}`,
-                    description: item.description,
-                    quantity: item.quantityApplies === false
-                        ? 'NIL'
-                        : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty),
-                    unit: item.unit,
-                    rate: item.rate,
-                    totalCost: item.rate * (item.quantityApplies === false
-                        ? 1
-                        : (item.unit === 'Lots' ? 1 : item.quantity * bundleQty)),
-                }));
-            } else {
-                allRows = [{
-                    id: `inv5-${sb.id}-main`,
-                    description: bundleName,
-                    quantity: bundleQty,
-                    unit: 'Nos',
-                    rate: sb.price || 0,
-                    totalCost: bundleTotalPrice,
-                }];
-            }
-
-            const feesSum = serviceRows.reduce(
-                (s, r) => s + (r.rate * (r.quantityApplies === false ? 1 : r.quantity)),
-                0
-            );
-            const sectionNetTotal = bundleTotalPrice + feesSum;
-            return { bundleName, allRows, netTotal: sectionNetTotal };
-        });
-
-        if (bundleInvoiceSections5.length === 0) {
-            const label = invoiceDetails?.bundle_title || formData.selectedBundle?.title || formData.selectedBundle?.name || 'Solar System';
-            const price = Number(invoiceDetails?.product_price || formData.selectedProductPrice || 0);
-            bundleInvoiceSections5.push({
-                bundleName: label,
-                allRows: [
-                    { id: 'inv5-main', description: label, quantity: 1, unit: 'Nos', rate: price, totalCost: price },
-                ],
-                netTotal: price,
-            });
-        }
-
-        const subTotalBeforeDiscount = bundleInvoiceSections5.reduce((s, sec) => s + sec.netTotal, 0);
-        const insuranceAmount = apiInsurance > 0 ? apiInsurance : 0;
-        const discountableBase = Math.max(subTotalBeforeDiscount, 0);
-        const computedDiscountFromPct = outrightDiscountPct > 0 ? (discountableBase * outrightDiscountPct) / 100 : 0;
-        // Insurance is never discountable; if percentage exists, compute from non-insurance base.
-        const effectiveOutrightDiscount = outrightDiscountPct > 0
-            ? computedDiscountFromPct
-            : outrightDiscount;
-        const discountedSubTotal = Math.max(subTotalBeforeDiscount - effectiveOutrightDiscount, 0);
-        // Insurance is added after discount (it is not discountable).
-        const netTotal = discountedSubTotal + insuranceAmount;
-        const vatAmount = (netTotal * vatPercent) / 100;
-        const grandTotal = netTotal + vatAmount;
-        // Keep totals internally consistent in this summary card:
-        // Grand Total must equal Sum-Total + VAT.
-        const finalTotal = grandTotal;
+        // Non-audit: payment portal only — invoice was already shown on step 7.5
+        const { invoiceTotals, vatPercent, insurancePercent } = buildBuyNowInvoiceViewModel(invoiceDetails);
+        const {
+            subTotalBeforeDiscount,
+            effectiveOutrightDiscount,
+            outrightDiscountPct,
+            discountedSubTotal,
+            deliveryFee,
+            installationFee,
+            materialCost,
+            inspectionFee,
+            totalAmount,
+            vatAmount,
+            insuranceAmount,
+            grandTotal,
+        } = invoiceTotals;
 
         return (
         <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
             <button onClick={() => setStep(7.5)} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
-                <ArrowLeft size={16} className="mr-2" /> Back
+                <ArrowLeft size={16} className="mr-2" /> Back to Invoice
             </button>
-            <h2 className="text-2xl font-bold mb-4 text-[#273e8e] border-b pb-4">Invoice #{orderId || 'Pending'}</h2>
+            <h2 className="text-2xl font-bold mb-2 text-[#273e8e] border-b pb-4">Payment</h2>
+            <p className="text-sm text-gray-600 mb-6">
+                Order <span className="font-semibold text-[#273e8e]">#{orderId || 'Pending'}</span> is confirmed.
+                Complete payment below to finalize your purchase.
+            </p>
 
-            {(() => {
-                let userEmail = '';
-                try {
-                    userEmail = JSON.parse(localStorage.getItem('user_info') || '{}').email || '';
-                } catch {
-                    userEmail = '';
-                }
-                const addr = formatBuyNowInstallationAddress();
-                return (
-                    <div className="mb-6 p-4 rounded-xl border border-gray-200 bg-gray-50">
-                        <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-                            <MapPin size={18} className="text-[#273e8e] shrink-0" />
-                            Customer details
-                        </h3>
-                        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                            <div>
-                                <dt className="text-gray-500">Contact name</dt>
-                                <dd className="font-medium text-gray-900">{formData.fullName?.trim() || '—'}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-gray-500">Phone</dt>
-                                <dd className="font-medium text-gray-900">{formData.phone?.trim() || '—'}</dd>
-                            </div>
-                            {userEmail ? (
-                                <div className="md:col-span-2">
-                                    <dt className="text-gray-500">Account email</dt>
-                                    <dd className="font-medium text-gray-900">{userEmail}</dd>
-                                </div>
-                            ) : null}
-                            <div className="md:col-span-2">
-                                <dt className="text-gray-500">Address</dt>
-                                <dd className="font-medium text-gray-900">{addr || '—'}</dd>
-                            </div>
-                        </dl>
-                    </div>
-                );
-            })()}
+            <PaymentSummaryCard
+                subTotalBeforeDiscount={subTotalBeforeDiscount}
+                effectiveOutrightDiscount={effectiveOutrightDiscount}
+                outrightDiscountPct={outrightDiscountPct}
+                discountedSubTotal={discountedSubTotal}
+                deliveryFee={deliveryFee}
+                installationFee={installationFee}
+                materialCost={materialCost}
+                inspectionFee={inspectionFee}
+                totalAmount={totalAmount}
+                vatAmount={vatAmount}
+                vatPercent={vatPercent}
+                insuranceAmount={insuranceAmount}
+                insurancePercent={insurancePercent}
+                grandTotal={grandTotal}
+                showInsurance={formData.includeInsurance}
+            />
 
-            {bundleInvoiceSections5.map((section, sIdx) => (
-                <div key={`inv5-section-${sIdx}`} className="mb-6">
-                    <h3 className="text-base font-semibold text-[#273e8e] mb-2 uppercase tracking-wide">
-                        Invoice — {section.bundleName}
-                    </h3>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-sm">
-                            <thead>
-                                <tr className="border-b-2 border-gray-300 bg-gray-50">
-                                    <th className="py-3 px-2 font-semibold text-gray-700">ITEM DESCRIPTION</th>
-                                    <th className="py-3 px-2 font-semibold text-gray-700 text-center w-16">QTY</th>
-                                    <th className="py-3 px-2 font-semibold text-gray-700 text-center w-16">UNIT</th>
-                                    <th className="py-3 px-2 font-semibold text-gray-700 text-right w-28">RATE</th>
-                                    <th className="py-3 px-2 font-semibold text-gray-700 text-right w-32">TOTAL COST</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {section.allRows.map((row) => (
-                                    <tr key={row.id} className="border-b border-gray-100">
-                                        <td className="py-3 px-2 text-gray-800">{stripFeeVisibilityPrefix(row.description)}</td>
-                                        <td className="py-3 px-2 text-center">{row.quantity}</td>
-                                        <td className="py-3 px-2 text-center text-gray-600">{row.unit}</td>
-                                        <td className="py-3 px-2 text-right">{row.rate > 0 ? `₦${formatAmount(row.rate)}` : '—'}</td>
-                                        <td className="py-3 px-2 text-right font-semibold">{row.totalCost > 0 ? `₦${formatAmount(row.totalCost)}` : '—'}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                            <tfoot>
-                                <tr className="border-t-2 border-gray-300">
-                                    <td colSpan={4} className="py-3 px-2 font-bold text-gray-800">Sum-Total</td>
-                                    <td className="py-3 px-2 text-right font-bold">₦{formatAmount(section.netTotal)}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-            ))}
-
-            {apiInsurance > 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg text-sm text-yellow-800 mb-4">
-                    Insurance Fee: ₦{formatAmount(apiInsurance)} (not discounted; added after discount in the summary below)
-                </div>
-            )}
-            {effectiveOutrightDiscount > 0 && (
-                <div className="bg-green-50 border border-green-200 p-3 rounded-lg text-sm text-green-800 mb-4">
-                    Outright purchase discount applied: {outrightDiscountPct || 10}% (−₦{formatAmount(effectiveOutrightDiscount)})
-                </div>
-            )}
-
-            <div className="bg-[#273e8e]/5 border border-[#273e8e]/20 rounded-lg p-4 mb-6">
-                <div className="flex justify-between items-center text-sm text-gray-700 mb-1">
-                    <span>Sub-Total</span>
-                    <span className="font-semibold">₦{formatAmount(subTotalBeforeDiscount)}</span>
-                </div>
-                {effectiveOutrightDiscount > 0 && (
-                    <div className="flex justify-between items-center text-sm text-green-700 mb-1">
-                        <span>Outright discount ({outrightDiscountPct || 10}%)</span>
-                        <span className="font-semibold">-₦{formatAmount(effectiveOutrightDiscount)}</span>
-                    </div>
-                )}
-                {effectiveOutrightDiscount > 0 && (
-                    <div className="flex justify-between items-center text-sm text-gray-600 mb-1 pl-1 border-b border-[#273e8e]/10 pb-2">
-                        <span>Sub-Total after discount</span>
-                        <span className="font-semibold text-gray-800">₦{formatAmount(discountedSubTotal)}</span>
-                    </div>
-                )}
-                {insuranceAmount > 0 && (
-                    <div className="flex justify-between items-center text-sm text-gray-700 mb-1 mt-2">
-                        <span>Insurance fee</span>
-                        <span className="font-semibold">+₦{formatAmount(insuranceAmount)}</span>
-                    </div>
-                )}
-                <div className="flex justify-between items-center text-sm text-gray-800 mb-1 mt-1 font-medium">
-                    <span>Sum-Total (before VAT)</span>
-                    <span className="font-semibold">₦{formatAmount(netTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm text-gray-700 mb-2">
-                    <span>VAT ({vatPercent}%)</span>
-                    <span className="font-semibold">₦{formatAmount(vatAmount)}</span>
-                </div>
-                <div className="flex justify-between items-center border-t border-[#273e8e]/20 pt-2">
-                    <span className="font-bold text-lg text-[#273e8e]">Grand Total</span>
-                    <span className="font-bold text-xl text-[#273e8e]">₦{formatAmount(finalTotal)}</span>
-                </div>
-            </div>
-            
-            {/* Calendar Slots Section */}
-            {calendarSlots.length > 0 && (() => {
-                // Group slots by date to get unique dates only
-                const uniqueDates = [];
-                const dateMap = new Map();
-                
-                calendarSlots.forEach(slot => {
-                    if (!dateMap.has(slot.date)) {
-                        dateMap.set(slot.date, slot);
-                        uniqueDates.push(slot);
-                    }
-                });
-
-                const ownInstaller = formData.installerChoice === 'own';
-
-                return (
-                    <div className="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <h3 className="font-bold text-[#273e8e] mb-3 flex items-center">
-                            <Calendar size={20} className="mr-2" />
-                            {ownInstaller ? 'Available Delivery Dates' : 'Available Installation Dates'}
-                        </h3>
-                        {ownInstaller ? (
-                            <>
-                                <p className="text-sm text-gray-600 mb-3">
-                                    <strong>Estimated dates:</strong> These calendar options are typical availability windows. Final delivery date and time are confirmed after payment and scheduled by our team.
-                                </p>
-                                <p className="text-sm text-gray-600 mb-3">
-                                    Pick your preferred delivery date below:
-                                </p>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-sm text-gray-600 mb-3">
-                                    <strong>Estimated dates:</strong> these calendar options are typical availability windows. Final installation date and time are confirmed after payment and a quick site coordination call.
-                                </p>
-                                <p className="text-sm text-gray-600 mb-3">
-                                    Slots usually open from 72 hours after payment confirmation. Pick your preferred day below (exact time is scheduled with our team):
-                                </p>
-                            </>
-                        )}
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                            {uniqueDates.slice(0, 9).map((slot, idx) => {
-                                const dateStr = new Date(slot.date).toLocaleDateString('en-NG', { 
-                                    weekday: 'short', 
-                                    month: 'short', 
-                                    day: 'numeric' 
-                                });
-                                const slotDayKey = String(slot.date).slice(0, 10);
-                                const selectedDayKey = selectedSlot?.date ? String(selectedSlot.date).slice(0, 10) : '';
-                                const isSelected = selectedDayKey === slotDayKey;
-                                
-                                return (
-                                    <button
-                                        key={idx}
-                                        disabled={!slot.available}
-                                        onClick={() => {
-                                            if (slot.available) {
-                                                // Select the first available slot for this date
-                                                const firstSlotForDate = calendarSlots.find(s => 
-                                                    s.date === slot.date && s.available
-                                                );
-                                                if (firstSlotForDate) {
-                                                    setSelectedSlot(firstSlotForDate);
-                                                }
-                                            }
-                                        }}
-                                        className={`p-3 rounded-lg text-sm border transition-colors ${
-                                            isSelected
-                                                ? 'border-[#273e8e] bg-[#273e8e] text-white'
-                                                : slot.available
-                                                ? 'border-blue-300 hover:bg-blue-100 text-gray-800'
-                                                : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
-                                        }`}
-                                    >
-                                        <div className="font-medium text-center">{dateStr}</div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        {selectedSlot?.date && (
-                            <p className="mt-3 text-sm text-[#273e8e] font-medium">
-                                Selected {ownInstaller ? 'delivery' : 'installation'} date:{' '}
-                                {new Date(selectedSlot.date).toLocaleDateString('en-NG', {
-                                    weekday: 'long',
-                                    month: 'long',
-                                    day: 'numeric'
-                                })}
-                            </p>
-                        )}
-                    </div>
-                );
-            })()}
-            
-            {/* Removed price-change disclaimer under installation date picker */}
-            
             <button 
                 onClick={handleProceedToPayment}
                 disabled={processingPayment}
@@ -5327,8 +5767,8 @@ const BuyNowFlow = () => {
                 <span className={step >= 1 ? "text-[#273e8e]" : ""}>Type</span>
                 <span className={step >= 2 ? "text-[#273e8e]" : ""}>Product</span>
                 <span className={step >= 3 && step < 4 ? "text-[#273e8e]" : ""}>Option</span>
-                <span className={step >= 7 ? "text-[#273e8e]" : ""}>Summary</span>
-                <span className={step === 4 ? "text-[#273e8e]" : ""}>Checkout</span>
+                <span className={step === 7 ? "text-[#273e8e]" : ""}>Summary</span>
+                <span className={step === 7.5 ? "text-[#273e8e]" : ""}>Checkout</span>
                 <span className={step === 5 ? "text-[#273e8e]" : ""}>Payment</span>
                 <span className={step === 6 ? "text-[#273e8e]" : ""}>Complete</span>
             </div>
@@ -5340,10 +5780,11 @@ const BuyNowFlow = () => {
                             if (step === 1) return 14;
                             if (step >= 2 && step < 3) return 28;
                             if (step >= 3 && step < 4) return 42;
-                            if (step === 4) return 57;
-                            if (step === 5) return 71;
-                            if (step === 6) return 85;
-                            if (step >= 7) return 100;
+                            if (step === 4) return 50;
+                            if (step === 7) return 64;
+                            if (step === 7.5) return 78;
+                            if (step === 5) return 90;
+                            if (step === 6) return 100;
                             return 0;
                         })()}%`,
                     }}

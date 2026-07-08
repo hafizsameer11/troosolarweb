@@ -95,6 +95,9 @@ import { Minus, Plus, Trash } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ContextApi } from "../Context/AppContext";
 
+const FALLBACK_IMAGE =
+  "https://api.troosolar.com/storage/products/d5c7f116-57ed-46ef-a659-337c94c308a9.png";
+
 const CartItems = ({
   itemId,
   productId,
@@ -121,6 +124,7 @@ const CartItems = ({
 
   const defaultPath = `/homePage/product/${productId}`;
   const finalPath = linkPath || defaultPath;
+  const displayImage = image || FALLBACK_IMAGE;
 
   return (
     <div className="w-full bg-white rounded-2xl border border-gray-300 p-3 ">
@@ -128,7 +132,16 @@ const CartItems = ({
       <div className="flex items-center gap-4">
         {/* Image */}
         <div className="h-20 w-20 shrink-0 rounded-xl bg-[#f3f3f3] flex items-center justify-center overflow-hidden">
-          <img src={image} alt={name} className="h-16 w-16 object-contain" />
+          <img
+            src={displayImage}
+            alt={name}
+            className="h-16 w-16 object-contain"
+            onError={(e) => {
+              if (e.target.src !== FALLBACK_IMAGE) {
+                e.target.src = FALLBACK_IMAGE;
+              }
+            }}
+          />
         </div>
 
         {/* Details */}

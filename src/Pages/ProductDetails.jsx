@@ -18,6 +18,12 @@ import {
 import { ContextApi } from "../Context/AppContext";
 import API from "../config/api.config";
 import ProductPromoBadges from "../Component/ProductPromoBadges";
+import {
+  BNPL_PROMO_COPY,
+  BNPL_MIN_FALLBACK,
+  fetchBnplMinimumLoanAmount,
+  isBnplEligiblePrice,
+} from "../utils/bnplEligibility";
 
 /* ---------------- helpers ---------------- */
 const formatNGN = (n) => {
@@ -232,6 +238,7 @@ const mapApiProductToDetails = (p) => {
     image,
     heading: p?.title || `Product #${p?.id ?? ""}`,
     price: formatNGN(effectiveRaw),
+    priceAmount: effectiveRaw,
     oldPrice: oldRaw != null ? formatNGN(oldRaw) : "",
     discount:
       isDiscountActive && priceRaw > 0
@@ -275,6 +282,7 @@ export default function ProductDetails() {
   const [activeTab, setActiveTab] = useState("details");
   const [balance] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false); // NEW: Loading state for add to cart
+  const [bnplMinimumAmount, setBnplMinimumAmount] = useState(BNPL_MIN_FALLBACK);
 
   // categories (for name)
   const [categories, setCategories] = useState([]);
@@ -292,6 +300,20 @@ export default function ProductDetails() {
       } catch {}
     })();
   }, []);
+  useEffect(() => {
+    const t = localStorage.getItem("access_token");
+    let cancelled = false;
+    fetchBnplMinimumLoanAmount(t).then((min) => {
+      if (!cancelled) setBnplMinimumAmount(min);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const showBnplPromo = useMemo(
+    () => isBnplEligiblePrice(product?.priceAmount, bnplMinimumAmount),
+    [product?.priceAmount, bnplMinimumAmount]
+  );
   const catMap = useMemo(() => {
     const m = {};
     for (const c of categories)
@@ -649,18 +671,19 @@ export default function ProductDetails() {
                       Buy Now
                     </button>
                   </div>
-                  <div className="p-4 mt-6 bg-[#FFFF0033] rounded-lg">
-                    <p className="text-[#F8A91D] text-[14px] pb-5">
-                      Don't have the finances to proceed? Take a loan and repay
-                      at your convenience
-                    </p>
-                    <Link
-                      to="/loan"
-                      className="bg-[#F8A91D] py-2 px-6 text-white rounded-full text-[13px] hover:bg-[#E09618]/90 transition"
-                    >
-                      Apply
-                    </Link>
-                  </div>
+                  {showBnplPromo && (
+                    <div className="p-4 mt-6 bg-[#FFFF0033] rounded-lg">
+                      <p className="text-[#F8A91D] text-[14px] pb-5">
+                        {BNPL_PROMO_COPY}
+                      </p>
+                      <Link
+                        to="/bnpl"
+                        className="bg-[#F8A91D] py-2 px-6 text-white rounded-full text-[13px] hover:bg-[#E09618]/90 transition inline-block"
+                      >
+                        Apply
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </div>
 

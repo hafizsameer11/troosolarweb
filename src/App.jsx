@@ -21,6 +21,7 @@ import Tools from "./Pages/Tools";
 import More from "./Pages/More";
 import BNPLCreditCheckStatus from "./Pages/BNPLCreditCheckStatus";
 import BNPLLoanDetails from "./Pages/BNPLLoanDetails";
+import MonoRepayTest from "./Pages/MonoRepayTest";
 import ProductBundle from "./Pages/ProductBundleDetailPage";
 import SolarBundle from "./Pages/SolarBundle";
 import SolarBuilder from "./Pages/SolarBuilder";
@@ -100,6 +101,15 @@ const App = () => {
           element={
             <PrivateRoute>
               <BNPLLoanDetails />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/bnpl/mono-repay-test"
+          element={
+            <PrivateRoute>
+              <MonoRepayTest />
             </PrivateRoute>
           }
         />

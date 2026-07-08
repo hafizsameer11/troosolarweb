@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 
@@ -9,6 +9,13 @@ import API, { BASE_URL } from "../config/api.config";
 import { ChevronLeft, ShoppingCart } from "lucide-react"; // ← chevron back
 import Loading from "../Component/Loading";
 import ProductPromoBadges from "../Component/ProductPromoBadges";
+import {
+  BNPL_BUTTON_LABEL,
+  BNPL_MIN_FALLBACK,
+  BNPL_PROMO_COPY,
+  fetchBnplMinimumLoanAmount,
+  isBnplEligiblePrice,
+} from "../utils/bnplEligibility";
 
 // Turn BASE_URL (http://localhost:8000/api) into origin (http://localhost:8000)
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
@@ -108,7 +115,9 @@ const mapBundleDetail = (b) => {
   const discount = toNumber(b.discount_price);
   const showDiscount = discount > 0 && discount < total;
 
-  const price = formatNGN(showDiscount ? discount : total);
+  const priceAmount = showDiscount ? discount : total;
+
+  const price = formatNGN(priceAmount);
   const oldPrice = showDiscount ? formatNGN(total) : "";
   const pct = showDiscount ? Math.round((1 - discount / total) * 100) : 0;
   const discountBadge = showDiscount ? `-${pct}%` : "";
@@ -265,6 +274,7 @@ const mapBundleDetail = (b) => {
     productModel,
     fees,
     price,
+    priceAmount,
     oldPrice,
     discount: discountBadge,
     heroImage: image,
@@ -345,6 +355,7 @@ const ProductBundle = () => {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [bundleDetailTab, setBundleDetailTab] = useState("description"); // 'description' | 'specs'
+  const [bnplMinimumAmount, setBnplMinimumAmount] = useState(BNPL_MIN_FALLBACK);
   const recommendedLoadQ = searchParams.get("q");
   const handleBackNavigation = () => {
     if (window.history.length > 1) {
@@ -392,6 +403,73 @@ const ProductBundle = () => {
     }
     return null;
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    let cancelled = false;
+    fetchBnplMinimumLoanAmount(token).then((min) => {
+      if (!cancelled) setBnplMinimumAmount(min);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const showBnplOption = useMemo(
+    () =>
+      isBnplEligiblePrice(
+        productData?.priceAmount ?? toNumber(productData?.price),
+        bnplMinimumAmount
+      ),
+    [productData?.priceAmount, productData?.price, bnplMinimumAmount]
+  );
+
+  const renderBnplPromoBox = () => {
+    if (!showBnplOption) return null;
+    return (
+      <div className="p-4 mt-3 bg-[#FFFF0033] rounded-lg">
+        <p className="text-[#F8A91D] text-[14px] leading-relaxed">
+          {BNPL_PROMO_COPY}
+        </p>
+      </div>
+    );
+  };
+
+  const renderPurchaseButtons = (compact = false) => {
+    const rowClass = showBnplOption
+      ? compact
+        ? "grid grid-cols-2 gap-2"
+        : "flex gap-3"
+      : compact
+        ? "grid grid-cols-1"
+        : "flex flex-col";
+    const bnplClass = compact
+      ? "h-11 rounded-full bg-[#E8A91D] text-white text-[11px] lg:text-[14px] hover:bg-[#d4991a] transition-colors"
+      : "flex-1 text-sm bg-[#E8A91D] text-white py-4 rounded-full hover:bg-[#d4991a] transition-colors";
+    const buyNowClass = compact
+      ? "h-11 rounded-full bg-[#273E8E] text-white text-[11px] lg:text-[14px] hover:bg-[#1a2b6b] transition-colors"
+      : `text-sm bg-[#273E8E] text-white py-4 rounded-full hover:bg-[#1a2b6b] transition-colors ${showBnplOption ? "flex-1" : "w-full"}`;
+
+    return (
+      <div className={rowClass}>
+        {showBnplOption && (
+          <button type="button" onClick={handleBuyNowPayLater} className={bnplClass}>
+            {BNPL_BUTTON_LABEL}
+          </button>
+        )}
+        <button type="button" onClick={handleBuyNow} className={buyNowClass}>
+          Buy Now
+        </button>
+      </div>
+    );
+  };
+
+  const renderPurchaseSection = (compact = false) => (
+    <div className="flex flex-col gap-0">
+      {renderPurchaseButtons(compact)}
+      {renderBnplPromoBox()}
+    </div>
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -746,22 +824,9 @@ const ProductBundle = () => {
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex flex-col gap-3 mt-6 px-2">
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleBuyNowPayLater}
-                      className="flex-1 text-sm bg-[#E8A91D] text-white py-4 rounded-full hover:bg-[#d4991a] transition-colors"
-                    >
-                      Buy Now Pay Later
-                    </button>
-                    <button
-                      onClick={handleBuyNow}
-                      className="flex-1 text-sm bg-[#273E8E] text-white py-4 rounded-full hover:bg-[#1a2b6b] transition-colors"
-                    >
-                      Buy Now
-                    </button>
-                  </div>
+                {/* Actions + BNPL promo (same order as Solar Store product page) */}
+                <div className="mt-6 px-2">
+                  {renderPurchaseSection()}
                 </div>
               </div>
 
@@ -832,6 +897,10 @@ const ProductBundle = () => {
                         {formatBackupTime(productData.backupInfo || "Depending on usage and load.")}
                       </p>
                     </div>
+
+                    <hr className="my-4 border-gray-200" />
+
+                    {renderPurchaseSection(true)}
                   </div>
                 </div>
               </div>
@@ -1015,25 +1084,17 @@ const ProductBundle = () => {
                   )}
                 </div>
 
-                {/* Actions */}
-                <div className="mt-4 flex flex-col gap-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={handleBuyNowPayLater}
-                      className="h-11 rounded-full bg-[#E8A91D] text-white text-[11px] lg:text-[14px] hover:bg-[#d4991a] transition-colors"
-                    >
-                      Buy Now Pay Later
-                    </button>
-                    <button
-                      onClick={handleBuyNow}
-                      className="h-11 rounded-full bg-[#273E8E] text-white text-[11px] lg:text-[14px] hover:bg-[#1a2b6b] transition-colors"
-                    >
-                      Buy Now
-                    </button>
-                  </div>
+                <div className="mt-4 px-1">
+                  {renderPurchaseSection(true)}
                 </div>
               </div>
             </div>
+
+            {/* Sticky mobile purchase bar — buttons only; promo stays in scroll area above */}
+            <div className="sm:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur px-3 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+              {renderPurchaseButtons(true)}
+            </div>
+            <div className="sm:hidden h-28" aria-hidden="true" />
             {/* /MOBILE */}
           </div>
         </div>

@@ -1,5 +1,9 @@
-import React, { useState } from "react";
+import React, { useContext, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import axios from "axios";
+import { ContextApi } from "../Context/AppContext";
+import API from "../config/api.config";
+import { loginPathWithReturn } from "../utils/authRedirect";
 import ProductPromoBadges from "./ProductPromoBadges";
 
 const SolarBundleComponent = ({
@@ -18,17 +22,19 @@ const SolarBundleComponent = ({
   isHotDeal = false,
   isRecommended = false,
 }) => {
+  const { fetchCartCount, showCartNotificationModal } = useContext(ContextApi);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [err, setErr] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Fallback image URL
-  const FALLBACK_IMAGE = "https://api.troosolar.com/storage/products/d5c7f116-57ed-46ef-a659-337c94c308a9.png";
+  const FALLBACK_IMAGE =
+    "https://api.troosolar.com/storage/products/d5c7f116-57ed-46ef-a659-337c94c308a9.png";
 
-  // Use fallback if original image failed, otherwise use the provided image
-  const imageUrl = useFallback ? FALLBACK_IMAGE : (image || FALLBACK_IMAGE);
+  const imageUrl = useFallback ? FALLBACK_IMAGE : image || FALLBACK_IMAGE;
 
   const handleImageLoad = () => {
     setImageLoading(false);
@@ -36,22 +42,63 @@ const SolarBundleComponent = ({
 
   const handleImageError = () => {
     if (!useFallback) {
-      // Try fallback image first
       setUseFallback(true);
       setImageLoading(true);
     } else {
-      // Both original and fallback failed
       setImageLoading(false);
       setImageError(true);
     }
   };
 
   const handleCardClick = (e) => {
-    // Only navigate if the click is not on a button or link
-    if (!e.target.closest('a') && !e.target.closest('button')) {
+    if (!e.target.closest("a") && !e.target.closest("button")) {
       if (id) {
         navigate(`/productBundle/details/${id}${location.search || ""}`);
       }
+    }
+  };
+
+  const handleAddToCart = async (e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (!id) return;
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      navigate(loginPathWithReturn());
+      return;
+    }
+
+    try {
+      setErr("");
+      setAdding(true);
+      await axios.post(
+        API.CART,
+        {
+          itemable_type: "bundle",
+          itemable_id: Number(id),
+          quantity: 1,
+        },
+        {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      fetchCartCount?.();
+      showCartNotificationModal?.(heading, imageUrl);
+    } catch (addErr) {
+      const msg =
+        addErr?.response?.data?.message ||
+        addErr?.message ||
+        "Failed to add to cart.";
+      setErr(msg);
+      if (addErr?.response?.status === 409) {
+        alert(msg);
+      }
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -77,7 +124,6 @@ const SolarBundleComponent = ({
       }}
       onClick={handleCardClick}
     >
-      {/* Image: Fixed height container to prevent layout shift - matches Product component */}
       <div className="relative rounded-xl mb-2 overflow-hidden bg-gray-100 h-[130px] sm:h-[145px] flex items-center justify-center">
         <div className="absolute top-2 left-2 z-[11] pointer-events-none flex flex-col gap-1.5 items-start max-w-[55%]">
           <ProductPromoBadges isRecommended={isRecommended} isHotDeal={isHotDeal} />
@@ -87,39 +133,23 @@ const SolarBundleComponent = ({
             </span>
           ) : null}
         </div>
-        {/* Loading Indicator - Shows while image is loading */}
         {imageLoading && !imageError && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#273E8E]"></div>
           </div>
         )}
 
-        {/* Error State */}
         {imageError && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
             <div className="text-center text-gray-400">
-              <svg
-                className="w-8 h-8 mx-auto mb-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
               <p className="text-xs">Image unavailable</p>
             </div>
           </div>
         )}
 
-        {/* Actual Image - Fixed size to prevent layout shift */}
         <img
           src={imageUrl}
-          alt="Solar bundle product"
+          alt={heading || "Solar bundle product"}
           className={`w-full h-full object-contain transition-opacity duration-300 ${
             imageLoading ? "opacity-0" : "opacity-100"
           }`}
@@ -127,7 +157,7 @@ const SolarBundleComponent = ({
           onError={handleImageError}
         />
       </div>
-      {/* Title - compact height for 4-column layout */}
+
       <div className="min-h-[48px] mb-2">
         <h2 className="text-[13px] sm:text-[14px] font-medium text-slate-800 leading-snug line-clamp-2">
           {heading}
@@ -142,7 +172,6 @@ const SolarBundleComponent = ({
       <hr className="border-gray-300 mb-2" />
 
       <div className="flex justify-between items-start mb-2">
-        {/* Left: Pricing */}
         <div className="flex-1">
           <p className="font-semibold text-[#273E8E] text-[16px] max-sm:text-[14px]">{price}</p>
           {(oldPrice || discount) && (
@@ -159,7 +188,6 @@ const SolarBundleComponent = ({
           )}
         </div>
 
-        {/* Right: Rating (simplified to match Product component) */}
         {rating && (
           <div className="ml-2">
             <img
@@ -173,7 +201,6 @@ const SolarBundleComponent = ({
 
       <hr className="border-gray-300 mt-2 mb-3" />
 
-      {/* Actions: Buttons similar to Product component */}
       <div className="grid grid-cols-2 gap-2 mt-auto" onClick={(e) => e.stopPropagation()}>
         <Link
           to={detailLink}
@@ -182,13 +209,15 @@ const SolarBundleComponent = ({
         >
           Learn More
         </Link>
-        <Link
-          to={detailLink}
-          className="h-9 text-[10px] sm:text-[11px] rounded-full bg-[#273e8e] max-sm:text-[8px] max-sm:rounded-2xl max-sm:h-7 text-white flex items-center justify-center hover:bg-[#1a2b6b] transition-colors"
-          onClick={(e) => e.stopPropagation()}
+        <button
+          type="button"
+          onClick={handleAddToCart}
+          disabled={!id || adding}
+          title={err || ""}
+          className="h-9 text-[10px] sm:text-[11px] rounded-full bg-[#273e8e] max-sm:text-[8px] max-sm:rounded-2xl max-sm:h-7 text-white flex items-center justify-center hover:bg-[#1a2b6b] transition-colors disabled:opacity-60"
         >
-          Buy Now
-        </Link>
+          {adding ? "Adding…" : "Add to cart"}
+        </button>
       </div>
     </div>
   );

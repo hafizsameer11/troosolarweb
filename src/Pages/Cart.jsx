@@ -9,6 +9,13 @@ import { GiCheckMark } from "react-icons/gi";
 import TopNavbar from "../Component/TopNavbar";
 import API, { BASE_URL } from "../config/api.config";
 import { ContextApi } from "../Context/AppContext";
+import { loginPathWithReturn } from "../utils/authRedirect";
+import { persistSessionFromCartAccess } from "../utils/cartAccessAuth";
+import {
+  BNPL_MIN_FALLBACK,
+  BNPL_PROMO_COPY,
+  fetchBnplMinimumLoanAmount,
+} from "../utils/bnplEligibility";
 
 // helpers
 const toNumber = (v) =>
@@ -18,12 +25,39 @@ const toNumber = (v) =>
 
 // Turn BASE_URL (http://.../api) into origin (http://...)
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
+const FALLBACK_IMAGE =
+  "https://api.troosolar.com/storage/products/d5c7f116-57ed-46ef-a659-337c94c308a9.png";
+
 const toAbsolute = (path) => {
   if (!path) return "";
   if (/^https?:\/\//i.test(path)) return path;
   if (path.startsWith("/")) return `${API_ORIGIN}${path}`;
-  const cleaned = path.replace(/^public\//, "");
+  const cleaned = String(path).replace(/^public\//, "");
   return `${API_ORIGIN}/storage/${cleaned}`;
+};
+
+const resolveCartLineImage = (model = {}) => {
+  const fromGallery =
+    Array.isArray(model.images) && model.images.length > 0
+      ? model.images[0]?.image || model.images[0]?.url
+      : null;
+
+  const raw =
+    model.featured_image_url ||
+    model.featured_image ||
+    model.image_url ||
+    model.image ||
+    model.thumbnail ||
+    fromGallery ||
+    "";
+
+  const absolute = toAbsolute(raw);
+  return absolute || FALLBACK_IMAGE;
+};
+
+const normalizeCartLineType = (rawType) => {
+  const s = String(rawType || "");
+  return /bundle/i.test(s) ? "bundle" : "product";
 };
 
 const formatDateLabel = (value) => {
@@ -44,12 +78,7 @@ const INSTALL_MAP_KEY = "install_price_map";
 const mapCartItem = (ci) => {
   const model = ci?.itemable || {};
   const title = model.name || model.title || `Item #${ci?.itemable_id}`;
-  const image =
-    model.featured_image ||
-    model.image_url ||
-    model.image ||
-    (Array.isArray(model.images) && model.images[0]?.image) ||
-    "/placeholder-product.png";
+  const image = resolveCartLineImage(model);
 
   const serverUnit = toNumber(ci?.unit_price);
   const modelDiscount = toNumber(model.discount_price);
@@ -67,9 +96,9 @@ const mapCartItem = (ci) => {
   return {
     cartLineId: ci.id,
     refId: ci.itemable_id,
-    type: ci.type || ci.itemable_type, // Use ci.type first, fallback to ci.itemable_type
+    type: normalizeCartLineType(ci.type || ci.itemable_type),
     name: title,
-    image: toAbsolute(image),
+    image,
     qty,
     unitPrice: unit,
     subtotal,
@@ -109,8 +138,6 @@ const parseAddressListFromResponse = (resp) => {
 
 const ADDR_INDEX =
   API.Get_All_Addresses || `${BASE_URL}/delivery-address/index`;
-const BNPL_MIN_FALLBACK = 1_500_000;
-
 const minInstallationDateStr = () => {
   const t = new Date();
   t.setDate(t.getDate() + 1);
@@ -236,7 +263,11 @@ const Cart = () => {
   // Cart: fetch
   // ─────────────────────────────
   const loadCart = async () => {
-    if (!token) {
+    const authToken =
+      typeof window !== "undefined"
+        ? localStorage.getItem("access_token")
+        : null;
+    if (!authToken) {
       setErr("Please log in to view your cart.");
       setLines([]);
       setLoading(false);
@@ -248,7 +279,7 @@ const Cart = () => {
       const { data } = await axios.get(API.CART, {
         headers: {
           Accept: "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${authToken}`,
         },
       });
       const list = Array.isArray(data?.data) ? data.data : [];
@@ -307,21 +338,9 @@ const Cart = () => {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    axios
-      .get(API.CONFIG_LOAN_CONFIGURATION, {
-        headers: {
-          Accept: "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      })
-      .then((res) => {
-        if (cancelled) return;
-        const m = res?.data?.data?.minimum_loan_amount;
-        if (m != null && Number(m) > 0) {
-          setBnplMinimumAmount(Number(m));
-        }
-      })
-      .catch(() => {});
+    fetchBnplMinimumLoanAmount(token).then((min) => {
+      if (!cancelled) setBnplMinimumAmount(min);
+    });
     return () => {
       cancelled = true;
     };
@@ -354,9 +373,12 @@ const Cart = () => {
           return;
         }
         const payload = data.data;
+        persistSessionFromCartAccess(payload);
         if (payload?.requires_login) {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("user");
           const returnPath = `/cart?token=${encodeURIComponent(accessToken)}&type=${encodeURIComponent(orderType)}`;
-          navigate(`/login?return=${encodeURIComponent(returnPath)}`, { replace: true });
+          navigate(loginPathWithReturn(returnPath), { replace: true });
           return;
         }
         if (orderType === "bnpl") {
@@ -367,6 +389,7 @@ const Cart = () => {
           return;
         }
         await loadCart();
+        navigate("/cart", { replace: true });
       } catch (e) {
         if (!cancelled) {
           setErr(
@@ -1188,10 +1211,10 @@ const Cart = () => {
             <div className="w-full sm:w-[57%] space-y-4 p-5">
               <h1 className="text-2xl">Shopping Cart</h1>
               <Link
-                to="/homePage"
+                to="/homePage?from=cart#catalog-products"
                 className="text-blue-500 underline text-sm hover:text-blue-700"
               >
-                Go Back
+                Continue shopping
               </Link>
 
               <div className="px-4 p-2 text-xs rounded-xl bg-[#e0e4f3] text-[#273e8e] border-dashed border-[1.2px] my-3 border-[#273e8e]">
@@ -1202,9 +1225,9 @@ const Cart = () => {
                 </p>
               </div>
 
-              <Link to="/homePage">
-                <div className="px-4 p-2 text-xs rounded-xl bg-[#fff] py-4 flex justify-between items-center border-[1.2px] my-3 border-gray-400">
-                  <p className="">Add a product</p>
+              <Link to="/homePage?from=cart#catalog-products">
+                <div className="px-4 p-2 text-xs rounded-xl bg-[#fff] py-4 flex justify-between items-center border-[1.2px] my-3 border-gray-400 hover:border-[#273e8e] hover:bg-[#f8faff] transition-colors cursor-pointer">
+                  <p className="">Add more products</p>
                   <LucideSquarePlus />
                 </div>
               </Link>
@@ -1909,11 +1932,11 @@ const Cart = () => {
               <div className="flex flex-col gap-2 mt-4">
                 {checkout ? (
                   <Link
-                    to="/homePage"
+                    to="/homePage?from=cart#catalog-products"
                     onClick={() => setCheckOutPayment(false)}
                     className="py-4 text-sm text-center rounded-full bg-[#273e8e] text-white hover:bg-[#1f2f6e] transition"
                   >
-                    Continue Shopping
+                    Add more products
                   </Link>
                 ) : (
                   <Link
@@ -1969,6 +1992,13 @@ const Cart = () => {
             {/* STEP 1: Cart list */}
             {mobileStep === "cart" && (
               <>
+                <Link to="/homePage?from=cart#catalog-products">
+                  <div className="px-4 py-3 text-sm rounded-xl bg-white flex justify-between items-center border border-gray-400 hover:border-[#273e8e]">
+                    <span>Add more products</span>
+                    <LucideSquarePlus size={18} className="text-[#273e8e]" />
+                  </div>
+                </Link>
+
                 {loading ? (
                   <div className="px-4 p-4 text-sm rounded-xl bg-white border text-gray-500">
                     Loading…
@@ -2022,16 +2052,18 @@ const Cart = () => {
                     </button>
                   </div>
 
-                  {/* Loan banner with Apply button */}
-                  <div className="mt-4 rounded-xl border border-[#E8A91D] bg-[#F7F9CC] p-4 text-[12px] text-yellow-700">
-                    <div>
-                      Don’t have the finances to proceed? Take a loan and repay
-                      at your convenience.
+                  {showBnplButton && (
+                    <div className="mt-4 rounded-xl border border-[#E8A91D] bg-[#F7F9CC] p-4 text-[12px] text-yellow-700">
+                      <div>{BNPL_PROMO_COPY}</div>
+                      <button
+                        type="button"
+                        onClick={handleBuyByLoan}
+                        className="mt-3 inline-flex text-white rounded-full border border-yellow-400 bg-[#E8A91D] px-4 py-2 text-[12px]"
+                      >
+                        Apply
+                      </button>
                     </div>
-                    <button className="mt-3 inline-flex text-white rounded-full border border-yellow-400 bg-[#E8A91D] px-4 py-2 text-[12px]">
-                      Apply
-                    </button>
-                  </div>
+                  )}
                 </div>
               </>
             )}
@@ -2380,9 +2412,12 @@ const Cart = () => {
                 {firstLine && (
                   <div className="bg-white border border-gray-400 rounded-2xl p-4 flex items-center gap-3">
                     <img
-                      src={firstLine.image}
+                      src={firstLine.image || FALLBACK_IMAGE}
                       alt=""
                       className="h-14 w-14 object-contain rounded bg-gray-100"
+                      onError={(e) => {
+                        if (e.target.src !== FALLBACK_IMAGE) e.target.src = FALLBACK_IMAGE;
+                      }}
                     />
                     <div className="flex-1">
                       <Link
@@ -2665,9 +2700,12 @@ const Cart = () => {
                               className="flex items-center gap-3 w-full"
                             >
                               <img
-                                src={line.image}
+                                src={line.image || FALLBACK_IMAGE}
                                 alt={line.name}
                                 className="h-14 w-14 object-contain rounded bg-gray-100"
+                                onError={(e) => {
+                                  if (e.target.src !== FALLBACK_IMAGE) e.target.src = FALLBACK_IMAGE;
+                                }}
                               />
                               <div className="flex-1">
                                 <p className="text-sm line-clamp-2 hover:text-[#273e8e] hover:underline transition-colors">

@@ -15,6 +15,8 @@ const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
 
 const LoanCalculator = ({
   totalAmount: totalAmountProp,
+  /** Catalog/bundle price (order-list Sub-Total). Insurance is always 3% of this, not grand total. */
+  bundlePrice: bundlePriceProp,
   onConfirm,
   loanConfig: loanConfigProp,
 }) => {
@@ -105,7 +107,12 @@ const LoanCalculator = ({
 
   const depositAmount = (grandTotal * depositPercent) / 100;
   const principal = grandTotal - depositAmount;
-  const insuranceBase = isStandalone ? netAmount : grandTotal;
+  const catalogBundlePrice = Number(bundlePriceProp) > 0
+    ? Number(bundlePriceProp)
+    : (isStandalone ? netAmount : 0);
+  const insuranceBase = catalogBundlePrice > 0
+    ? catalogBundlePrice
+    : (isStandalone ? netAmount : grandTotal);
   const insuranceFee = insuranceBase * (insurancePercent / 100);
   const managementFee = principal * (managementPercent / 100);
   const legalFee = principal * (legalPercent / 100);
@@ -166,7 +173,7 @@ const LoanCalculator = ({
       { label: 'Total repayment amount', value: formatPlain(totalRepayment), bold: true },
       { label: `Monthly repayment (${tenor} months)`, value: formatPlain(monthlyRepayment), bold: true, highlight: true, hero: true },
       { section: 'fees' },
-      { label: `Insurance fee (${insurancePercent}% of product amount)`, value: formatPlain(insuranceFee) },
+      { label: `Insurance fee (${insurancePercent}% of bundle price)`, value: formatPlain(insuranceFee) },
       { label: `Management fee (${managementPercent}% of loan amount)`, value: formatPlain(managementFee) },
       { label: `Legal fee (${legalPercent}% of loan amount)`, value: formatPlain(legalFee) },
       { label: 'Total administrative fees', value: formatPlain(administrativeFees), bold: true },
@@ -524,7 +531,7 @@ const LoanCalculator = ({
               <div className="pt-4 border-t border-gray-200 space-y-2">
                 <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Administrative fees</p>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Insurance ({insurancePercent}% of product amount)</span>
+                  <span className="text-gray-500">Insurance ({insurancePercent}% of bundle price)</span>
                   <span className="font-medium">{formatCurrency(insuranceFee)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -572,6 +579,7 @@ const LoanCalculator = ({
                 type="button"
                 onClick={() => onConfirm({
                   totalAmount: grandTotal,
+                  bundlePrice: catalogBundlePrice > 0 ? catalogBundlePrice : insuranceBase,
                   netAmount,
                   depositPercent,
                   depositAmount,

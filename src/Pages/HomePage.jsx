@@ -5,7 +5,7 @@ import SearchBar from "../Component/SearchBar";
 import Items from "../Component/Items";
 import Product from "../Component/Product";
 import SolarBundleComponent from "../Component/SolarBundleComponent";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ContextApi } from "../Context/AppContext";
 import TopNavbar from "../Component/TopNavbar";
 import HrLine from "../Component/MobileSectionResponsive/HrLine";
@@ -237,6 +237,8 @@ const getCatalogItemLink = (item) =>
 const HomePage = () => {
   const { registerProducts, filteredResults, setFilteredResults } =
     useContext(ContextApi);
+  const [searchParams] = useSearchParams();
+  const fromCart = searchParams.get("from") === "cart";
 
   const [categories, setCategories] = useState([]);
   const [catLoading, setCatLoading] = useState(false);
@@ -317,6 +319,17 @@ const HomePage = () => {
     };
     fetchCategories();
   }, []);
+
+  useEffect(() => {
+    if (!fromCart) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("catalog-products")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [fromCart, prodLoading]);
 
   // Fetch products and bundles for Solar Store catalog
   useEffect(() => {
@@ -692,9 +705,21 @@ const HomePage = () => {
               )}
             </div>
 
-            <h1 className="text-xl text-gray-800 mb-4 font-bold">
+            <h1 id="catalog-products" className="text-xl text-gray-800 mb-4 font-bold scroll-mt-24">
               All Products
             </h1>
+
+            {fromCart && (
+              <div className="mb-4 rounded-xl border border-[#273e8e]/25 bg-[#eef2ff] px-4 py-3 text-sm text-[#273e8e] flex flex-wrap items-center justify-between gap-2">
+                <span>Add items to your cart, then return to checkout when you are ready.</span>
+                <Link
+                  to="/cart"
+                  className="font-semibold underline hover:text-[#1a2b6b] whitespace-nowrap"
+                >
+                  Back to cart
+                </Link>
+              </div>
+            )}
 
             {prodError && (
               <p className="text-red-600 text-sm mb-3">{prodError}</p>
@@ -920,9 +945,18 @@ const HomePage = () => {
               )}
             </div>
 
-            <h1 className="text-[16px] font-semibold text-gray-800 mb-3">
+            <h1 id="catalog-products" className="text-[16px] font-semibold text-gray-800 mb-3 scroll-mt-24">
               <HrLine text={"All Products"} />
             </h1>
+
+            {fromCart && (
+              <div className="mb-3 rounded-xl border border-[#273e8e]/25 bg-[#eef2ff] px-3 py-2 text-xs text-[#273e8e] flex flex-wrap items-center justify-between gap-2">
+                <span>Add items, then return to your cart.</span>
+                <Link to="/cart" className="font-semibold underline">
+                  Back to cart
+                </Link>
+              </div>
+            )}
 
             {prodError && (
               <p className="text-red-600 text-sm mb-3">{prodError}</p>

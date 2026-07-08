@@ -11,11 +11,11 @@ const ensureFlutterwave = () =>
     s.src = 'https://checkout.flutterwave.com/v3.js';
     s.async = true;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Failed to load Flutterwave script'));
+    s.onerror = () => reject(new Error('Failed to load payment gateway'));
     document.body.appendChild(s);
   });
 
-const BNPLPaymentModal = ({ installment, isOpen, onClose, onSuccess }) => {
+const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSuccess }) => {
   const [paymentMethod, setPaymentMethod] = useState('wallet');
   const [walletType, setWalletType] = useState('shop');
   const [walletBalance, setWalletBalance] = useState(null);
@@ -272,11 +272,51 @@ const BNPLPaymentModal = ({ installment, isOpen, onClose, onSuccess }) => {
     }
   };
 
+  const handleMonoDebitPayment = async () => {
+    if (!installment?.id) {
+      setError('Invalid installment');
+      return;
+    }
+    if (!monoDebitMandate?.ready_to_debit) {
+      setError('Mono Direct Debit is not ready yet. Set up or complete mandate authorization on your loan page.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await axios.post(
+        API.BNPL_INSTALLMENT_MONO_DEBIT(installment.id),
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        }
+      );
+      if (response.data?.status === 'success') {
+        alert('Installment debited from your linked bank account.');
+        handleClose();
+        if (onSuccess) onSuccess();
+      } else {
+        setError(response.data?.message || 'Bank debit failed');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Bank debit failed. Try card/bank transfer or wallet.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (paymentMethod === 'wallet') {
       await handleWalletPayment();
+    } else if (paymentMethod === 'mono_debit') {
+      await handleMonoDebitPayment();
     } else {
       await handleGatewayPayment();
     }
@@ -375,6 +415,31 @@ const BNPLPaymentModal = ({ installment, isOpen, onClose, onSuccess }) => {
                   )}
                 </div>
               </button>
+
+              {monoDebitMandate?.ready_to_debit && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('mono_debit')}
+                  className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                    paymentMethod === 'mono_debit'
+                      ? 'border-[#273e8e] bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Building className="text-[#273e8e]" size={20} />
+                      <div>
+                        <p className="font-semibold text-gray-800">Debit from linked bank</p>
+                        <p className="text-xs text-gray-500">Mono Direct Debit — one-tap from your bank account</p>
+                      </div>
+                    </div>
+                    {paymentMethod === 'mono_debit' && (
+                      <div className="w-4 h-4 rounded-full bg-[#273e8e] border-2 border-white"></div>
+                    )}
+                  </div>
+                </button>
+              )}
 
               {/* Card Option */}
               <button

@@ -1,28 +1,86 @@
-import React, { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Input } from "../Input";
+import React, { useEffect, useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import MessageSection from "./MessageSection";
 import axios from "axios";
 import API, { BASE_URL } from "../../config/api.config";
 
 const TICKETS_URL = API.TICKETS || `${BASE_URL}/website/tickets`;
+const SUBJECTS_URL = API.TICKET_SUBJECTS || `${BASE_URL}/site/ticket-subjects`;
+
+const SubjectSelect = ({ value, onChange, subjects, loading, id }) => (
+  <div>
+    <label
+      htmlFor={id}
+      className="block text-sm font-medium text-gray-700 mb-2"
+    >
+      Subject
+    </label>
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={loading || subjects.length === 0}
+      className="w-full bg-white border border-gray-300 rounded-lg px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-[#273e8e] focus:border-[#273e8e] disabled:bg-gray-100 disabled:text-gray-500"
+    >
+      <option value="">
+        {loading
+          ? "Loading subjects..."
+          : subjects.length === 0
+            ? "No subjects available — contact support"
+            : "Select ticket subject"}
+      </option>
+      {subjects.map((s) => (
+        <option key={s.id} value={s.title}>
+          {s.title}
+        </option>
+      ))}
+    </select>
+  </div>
+);
 
 const NewTicket = ({ onCancel, onCreated }) => {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [subjects, setSubjects] = useState([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(true);
 
-  // after-create view
-  const [created, setCreated] = useState(null); // { id, subject, date, messages }
+  const [created, setCreated] = useState(null);
 
   const token =
     typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
 
+  useEffect(() => {
+    const loadSubjects = async () => {
+      try {
+        setSubjectsLoading(true);
+        const { data } = await axios.get(SUBJECTS_URL, {
+          headers: { Accept: "application/json" },
+        });
+        const raw = data?.data ?? data ?? [];
+        const list = Array.isArray(raw) ? raw : [];
+        setSubjects(
+          list
+            .filter((s) => s?.title)
+            .sort(
+              (a, b) =>
+                (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)
+            )
+        );
+      } catch {
+        setSubjects([]);
+      } finally {
+        setSubjectsLoading(false);
+      }
+    };
+    loadSubjects();
+  }, []);
+
   const handleSubmit = async () => {
     setError("");
     if (!subject.trim() || !body.trim()) {
-      setError("Please enter a subject and a message.");
+      setError("Please select a subject and enter a message.");
       return;
     }
     if (!token) {
@@ -49,10 +107,16 @@ const NewTicket = ({ onCancel, onCreated }) => {
       const subjectResp = payload?.subject ?? subject.trim();
       const date = payload?.date ?? new Date().toISOString();
 
-      const normalized = { id, subject: subjectResp, date, messages };
+      const normalized = {
+        id,
+        subject: subjectResp,
+        date,
+        created_at: date,
+        status: "Pending",
+        messages,
+      };
       setCreated(normalized);
 
-      // let the parent (Support) refresh its list if it passed a handler
       if (typeof onCreated === "function") {
         onCreated({ ticket_id: id, subject: subjectResp, date, messages });
       }
@@ -65,7 +129,6 @@ const NewTicket = ({ onCancel, onCreated }) => {
     }
   };
 
-  // After successful creation, show the conversation view in-place
   if (created) {
     return (
       <MessageSection
@@ -92,19 +155,16 @@ const NewTicket = ({ onCancel, onCreated }) => {
             <p className="text-lg font-semibold text-gray-800">New Ticket</p>
           </div>
 
-          {/* Subject */}
           <div className="mb-6">
-            <Input
-              id="subject"
-              label="Subject"
-              placeholder="Select ticket subject"
-              icon={<ChevronRight size={20} color="black" />}
+            <SubjectSelect
+              id="subject-desktop"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={setSubject}
+              subjects={subjects}
+              loading={subjectsLoading}
             />
           </div>
 
-          {/* Message */}
           <div>
             <label
               htmlFor="message"
@@ -125,12 +185,11 @@ const NewTicket = ({ onCancel, onCreated }) => {
           </div>
         </div>
 
-        {/* Send */}
         <div className="mt-10">
           <button
             onClick={handleSubmit}
             className="w-full flex items-center justify-center bg-[#273e8e] text-white font-medium text-sm rounded-full py-4 px-6 shadow hover:bg-[#1e2f75] transition disabled:opacity-60"
-            disabled={submitting}
+            disabled={submitting || subjectsLoading || subjects.length === 0}
           >
             {submitting ? "Sending..." : "Send"}
           </button>
@@ -139,35 +198,22 @@ const NewTicket = ({ onCancel, onCreated }) => {
 
       {/* Mobile View */}
       <div className="sm:hidden block min-h-screen bg-[#f5f6ff]">
-        {/* Main Content */}
-        <div className=" flex-1 flex flex-col">
-          {/* Subject Input */}
+        <div className="flex-1 flex flex-col">
           <div className="mb-6 mt-4">
-            <label className="block text-ms font-medium text-gray-700 mb-2">
-              Subject
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Select ticket subject"
-                className="w-full text-xs bg-white border border-gray-300 rounded-lg px-3 py-4 outline-none pr-10"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              />
-              <ChevronRight
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                size={16}
-              />
-            </div>
+            <SubjectSelect
+              id="subject-mobile"
+              value={subject}
+              onChange={setSubject}
+              subjects={subjects}
+              loading={subjectsLoading}
+            />
           </div>
 
-          {/* Message Input */}
           <div className="flex-1 mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Message
             </label>
             <textarea
-              placeholder=""
               className="w-full bg-white border border-gray-300 rounded-lg px-3 py-3 text-sm outline-none resize-none h-64"
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -178,12 +224,11 @@ const NewTicket = ({ onCancel, onCreated }) => {
           </div>
         </div>
 
-        {/* Fixed Bottom Send Button */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#f5f6ff] border-t border-gray-200">
           <button
             onClick={handleSubmit}
             className="w-full bg-[#273e8e] text-white rounded-full py-3 text-sm font-medium disabled:opacity-60"
-            disabled={submitting}
+            disabled={submitting || subjectsLoading || subjects.length === 0}
           >
             {submitting ? "Sending..." : "Send"}
           </button>

@@ -45,7 +45,8 @@ const FAQ = () => {
   if (faqs.length === 0) {
     return (
       <div className="py-6 text-center text-gray-500">
-        No FAQs available. Add them from the admin site settings.
+        No FAQs available yet. Ask your admin to add them under{" "}
+        <strong>Settings → FAQs</strong> in the admin panel.
       </div>
     );
   }

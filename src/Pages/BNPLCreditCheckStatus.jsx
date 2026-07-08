@@ -426,7 +426,7 @@ const BNPLCreditCheckStatus = () => {
                                                                     </div>
                                                                     {details.property_landmark && (
                                                                         <div>
-                                                                            <p className="text-sm text-gray-500 mb-1">Landmark</p>
+                                                                            <p className="text-sm text-gray-500 mb-1">Current Power Sources</p>
                                                                             <p className="font-semibold text-gray-800">
                                                                                 {details.property_landmark}
                                                                             </p>
@@ -537,7 +537,7 @@ const BNPLCreditCheckStatus = () => {
                                                                 {details.status === 'pending' && (
                                                                     <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                                                         <p className="text-sm text-blue-700">
-                                                                            <strong>Status:</strong> Your application is under review. This usually takes 24-48 hours.
+                                                                            <strong>Status:</strong> Your application is under review. This usually takes 24-72 hours.
                                                                         </p>
                                                                     </div>
                                                                 )}

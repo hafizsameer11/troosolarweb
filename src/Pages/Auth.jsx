@@ -9,6 +9,7 @@ import {
   authSwitchPath,
   getSafeReturnPath,
 } from "../utils/authRedirect";
+import { isCartOrderDeepLink } from "../utils/cartAccessAuth";
 
 const Auth = () => {
   const location = useLocation();
@@ -47,6 +48,16 @@ const Auth = () => {
       }
     }
   }, [location.search, isLogin]);
+
+  // Email / deep links: if already signed in, skip the login form and go to ?return=
+  // Cart order links handle auth on /cart or /bnpl — do not bounce logged-in visitors in a loop.
+  useEffect(() => {
+    if (!isLogin) return;
+    const token = localStorage.getItem("access_token");
+    if (!token || !returnPath) return;
+    if (isCartOrderDeepLink(returnPath)) return;
+    navigate(returnPath, { replace: true });
+  }, [isLogin, returnPath, navigate]);
 
   // Function to check if all required fields are filled
   const isFormValid = () => {

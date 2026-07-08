@@ -11,6 +11,8 @@ import {
 import { useSearchParams } from "react-router-dom";
 import API from "../../config/api.config";
 
+const ITEMS_PER_PAGE = 10;
+
 const formatWhen = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -50,7 +52,45 @@ const sourceLabel = (src) => {
   return src || "—";
 };
 
-const ITEMS_PER_PAGE = 10;
+const formatNaira = (amount) => {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(n);
+};
+
+const formatPaymentDate = (isoDate) => {
+  if (!isoDate) return "—";
+  const d = new Date(`${isoDate}T12:00:00`);
+  if (isNaN(d.getTime())) return String(isoDate);
+  return d.toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatPaymentTime = (time24) => {
+  if (!time24) return "—";
+  const [h, m] = String(time24).split(":");
+  const hour = Number(h);
+  const minute = Number(m);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return String(time24);
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" });
+};
+
+const hasAuditPaymentDetails = (row) =>
+  row?.approval_payment_date ||
+  row?.approval_payment_time ||
+  row?.approval_payment_amount != null ||
+  row?.approval_payment_account_details;
+
 
 const pageNumberWindow = (currentPage, totalPages, maxButtons = 5) => {
   if (totalPages <= maxButtons) {
@@ -315,6 +355,45 @@ const AuditRequests = () => {
                           </dd>
                         </div>
                       ) : null}
+                      {String(row.status || "").toLowerCase() === "approved" &&
+                        hasAuditPaymentDetails(row) && (
+                          <div className="sm:col-span-2 mt-2">
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 space-y-3">
+                              <p className="text-sm font-semibold text-emerald-900">
+                                Audit payment instructions
+                              </p>
+                              <p className="text-xs text-emerald-800">
+                                Your audit has been approved. Please complete payment using the details below.
+                              </p>
+                              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                                <div>
+                                  <dt className="text-emerald-700">Payment date</dt>
+                                  <dd className="font-medium text-gray-900">
+                                    {formatPaymentDate(row.approval_payment_date)}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="text-emerald-700">Payment time</dt>
+                                  <dd className="font-medium text-gray-900">
+                                    {formatPaymentTime(row.approval_payment_time)}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="text-emerald-700">Amount</dt>
+                                  <dd className="font-medium text-gray-900">
+                                    {formatNaira(row.approval_payment_amount)}
+                                  </dd>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <dt className="text-emerald-700">Account details</dt>
+                                  <dd className="font-medium text-gray-900 whitespace-pre-wrap">
+                                    {row.approval_payment_account_details || "—"}
+                                  </dd>
+                                </div>
+                              </dl>
+                            </div>
+                          </div>
+                        )}
                       {row.admin_notes ? (
                         <div className="sm:col-span-2">
                           <dt className="text-gray-500">Notes from team</dt>

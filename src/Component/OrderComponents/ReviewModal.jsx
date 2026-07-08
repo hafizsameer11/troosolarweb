@@ -57,9 +57,7 @@ const ReviewModal = ({
               <X size={24} />
             </button>
             <div className="pr-10 text-center">
-              <h2 className="text-md text-gray-900">
-                {existingReview ? "Edit Review" : "Add a review"}
-              </h2>
+              <h2 className="text-md text-gray-900">Add a review</h2>
               {productTitle ? (
                 <p className="text-xs text-gray-500 mt-1 line-clamp-2">{productTitle}</p>
               ) : null}
@@ -138,9 +136,7 @@ const ReviewModal = ({
               <X size={24} />
             </button>
             <div className="pr-10 text-center">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {existingReview ? "Edit Review" : "Add a review"}
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Add a review</h2>
               {productTitle ? (
                 <p className="text-xs text-gray-500 mt-1 line-clamp-2">{productTitle}</p>
               ) : null}

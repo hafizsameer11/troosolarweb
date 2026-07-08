@@ -23,3 +23,17 @@ export const filterBillableInvoiceFees = (rows) =>
   (rows || []).filter(
     (r) => Number(r.rate) > 0 && !isLegacyDefaultInvoiceFee(r.description, r.rate)
   );
+
+/**
+ * Map one admin invoice-fee row to a single category.
+ * Material is checked before installation so "Installation Material Fee" is material only.
+ */
+export const classifyInvoiceFeeKind = (description) => {
+  const name = stripInvoiceFeeTitle(description);
+  if (!name) return null;
+  if (name.includes('delivery')) return 'delivery';
+  if (name.includes('inspection')) return 'inspection';
+  if (name.includes('material')) return 'material';
+  if (name.includes('installation')) return 'installation';
+  return null;
+};

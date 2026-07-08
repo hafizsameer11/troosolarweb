@@ -4,6 +4,7 @@ import SideBar from '../Component/SideBar';
 import TopNavbar from '../Component/TopNavbar';
 import axios from 'axios';
 import API from '../config/api.config';
+import { loginPathWithReturn } from '../utils/authRedirect';
 import { 
   CheckCircle, 
   XCircle, 
@@ -44,7 +45,7 @@ const ensureFlutterwave = () =>
     s.src = 'https://checkout.flutterwave.com/v3.js';
     s.async = true;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Failed to load Flutterwave script'));
+    s.onerror = () => reject(new Error('Failed to load payment gateway'));
     document.body.appendChild(s);
   });
 
@@ -71,6 +72,53 @@ const BNPLLoanDetails = () => {
     const [showBookInstallationModal, setShowBookInstallationModal] = useState(false);
     const [bookingInstallationDate, setBookingInstallationDate] = useState('');
     const [processingBookInstallation, setProcessingBookInstallation] = useState(false);
+    const [processingMandateSetup, setProcessingMandateSetup] = useState(false);
+
+    const handleSetupMonoMandate = async (monoCalculationId, loanApplicationId) => {
+        if (!monoCalculationId) {
+            alert('Loan calculation not found. Please try again after your order is created.');
+            return;
+        }
+        setProcessingMandateSetup(true);
+        try {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                alert('Please login to continue');
+                return;
+            }
+            const response = await axios.post(
+                API.BNPL_MANDATE_INITIATE,
+                {
+                    mono_calculation_id: monoCalculationId,
+                    loan_application_id: loanApplicationId || undefined,
+                },
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+            const authUrl = response.data?.data?.authorization_url;
+            if (authUrl) {
+                window.open(authUrl, '_blank', 'noopener,noreferrer');
+            }
+            alert(
+                'Open the Mono window to authorize automatic repayments from your bank (e-mandate). ' +
+                'After you complete the ₦50 verification transfer, your bank may take up to 72 hours to approve the mandate.'
+            );
+            if (id && !id.startsWith('app-')) {
+                fetchOrderDetails(id);
+            } else if (loanApplicationId) {
+                fetchApplicationDetails(String(loanApplicationId));
+            }
+        } catch (err) {
+            alert(err.response?.data?.message || err.message || 'Failed to start Mono Direct Debit setup.');
+        } finally {
+            setProcessingMandateSetup(false);
+        }
+    };
 
     useEffect(() => {
         if (id) {
@@ -339,6 +387,15 @@ const BNPLLoanDetails = () => {
             }
         } catch (err) {
             console.error('Error fetching application details:', err);
+            if (err.response?.status === 401) {
+                try {
+                    localStorage.removeItem('access_token');
+                } catch {
+                    /* ignore */
+                }
+                navigate(loginPathWithReturn(`/bnpl-loans/app-${applicationId}`), { replace: true });
+                return;
+            }
             setError(err.response?.data?.message || 'Failed to load application details');
         } finally {
             setLoading(false);
@@ -1808,6 +1865,65 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
+                {/* Mono Direct Debit — automatic repayments */}
+                {(() => {
+                    const monoCalculationId = order.mono_calculation_id
+                        || loanApp?.mono_loan_calculation
+                        || loanApp?.mono?.id;
+                    const mandate = order.mono_debit_mandate;
+                    if (!monoCalculationId) {
+                        return null;
+                    }
+                    const ready = mandate?.ready_to_debit;
+                    const pending = mandate?.has_mandate && !ready;
+                    return (
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+                            <div className="flex items-start gap-3 mb-3">
+                                <Building className="text-[#273e8e] shrink-0 mt-0.5" size={22} />
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-semibold text-gray-800">Automatic bank repayments (Mono Direct Debit)</h3>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                        Authorize a Direct Debit mandate so monthly installments can be collected from your linked bank account.
+                                        You can still pay manually with card or bank transfer anytime.
+                                    </p>
+                                </div>
+                            </div>
+                            {ready ? (
+                                <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+                                    Your repayment mandate is active. Choose <strong>Debit from linked bank</strong> when paying an installment, or wait for automatic collection on due dates.
+                                </div>
+                            ) : pending ? (
+                                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 space-y-3">
+                                    <p>
+                                        Mandate status: <strong>{mandate.status || 'pending'}</strong>.
+                                        {mandate.authorization_url
+                                            ? ' If you have not finished authorization, open Mono again.'
+                                            : ' Waiting for bank approval (can take up to 72 hours).'}
+                                    </p>
+                                    {mandate.authorization_url && (
+                                        <button
+                                            type="button"
+                                            onClick={() => window.open(mandate.authorization_url, '_blank', 'noopener,noreferrer')}
+                                            className="text-[#273e8e] font-semibold underline"
+                                        >
+                                            Open Mono authorization
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    disabled={processingMandateSetup}
+                                    onClick={() => handleSetupMonoMandate(monoCalculationId, loanApp?.id)}
+                                    className="w-full sm:w-auto px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] disabled:opacity-50"
+                                >
+                                    {processingMandateSetup ? 'Starting...' : 'Set up automatic repayments'}
+                                </button>
+                            )}
+                        </div>
+                    );
+                })()}
+
                 {/* Repayment Calendar */}
                 {repaymentSchedule && repaymentSchedule.length > 0 && (
                     <RepaymentCalendar
@@ -1996,7 +2112,7 @@ const BNPLLoanDetails = () => {
                                     )}
                                     {loanApp.property_landmark && (
                                         <div>
-                                            <p className="text-sm text-gray-500 mb-1">Landmark</p>
+                                            <p className="text-sm text-gray-500 mb-1">Current Power Sources</p>
                                             <p className="font-semibold text-gray-800">
                                                 {loanApp.property_landmark}
                                             </p>
@@ -2114,6 +2230,7 @@ const BNPLLoanDetails = () => {
             {/* Payment Modal */}
             <BNPLPaymentModal
                 installment={selectedInstallment}
+                monoDebitMandate={orderData?.mono_debit_mandate}
                 isOpen={showPaymentModal}
                 onClose={() => {
                     setShowPaymentModal(false);

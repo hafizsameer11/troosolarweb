@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import API from "../config/api.config";
+import { loginPathWithReturn } from "../utils/authRedirect";
 
 const LoanWallet = () => {
   const [showAmount, setShowAmount] = useState(true); // true => amount visible (eye open), false => hidden (eye closed)
@@ -24,7 +25,7 @@ const LoanWallet = () => {
       try {
         const token = localStorage.getItem("access_token");
         if (!token) {
-          navigate("/login");
+          navigate(loginPathWithReturn(location.pathname + location.search));
           return;
         }
 
@@ -46,7 +47,7 @@ const LoanWallet = () => {
         const status = e?.response?.status;
         if (status === 401) {
           localStorage.removeItem("access_token");
-          navigate("/login");
+          navigate(loginPathWithReturn(location.pathname + location.search), { replace: true });
           return;
         }
         if (status === 404) {
