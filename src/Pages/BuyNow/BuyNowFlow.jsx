@@ -4369,10 +4369,10 @@ const BuyNowFlow = () => {
             ?? 0
         );
         const installationFee = installerIsTroosolar ? categoryInstallation : 0;
-        const categoryInspection = Number(
+        // Inspection applies for both TrooSolar and Own Installer (per category).
+        const inspectionFee = Number(
             checkoutSettings?.category_inspection_fees?.[categoryKey] ?? 0
         );
-        const inspectionFee = installerIsTroosolar ? categoryInspection : 0;
         const categoryMaterials = Number(
             checkoutSettings?.category_materials_fees?.[categoryKey]
             ?? checkoutSettings?.installation_materials_cost
