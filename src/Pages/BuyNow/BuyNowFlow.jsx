@@ -1144,7 +1144,18 @@ const BuyNowFlow = () => {
     // NEW: Handle solar solution group selection (5 predefined options)
     const handleCategorySelect = async (groupType) => {
         // groupType can be: 'full-kit', 'inverter-battery', 'battery-only', 'inverter-only', 'panels-only'
-        setFormData({ ...formData, productCategory: groupType });
+        const isProductOnlyPath = ['battery-only', 'inverter-only', 'panels-only'].includes(groupType);
+        setFormData({
+            ...formData,
+            productCategory: groupType,
+            // Keep bundle vs product flows fully separated
+            ...(isProductOnlyPath ? {
+                selectedBundles: [],
+                selectedBundleId: null,
+                selectedBundle: null,
+                optionType: '',
+            } : {}),
+        });
 
         // For full-kit and inverter-battery, go to Action Selection (Step 3)
         if (groupType === 'full-kit' || groupType === 'inverter-battery') {
@@ -4322,7 +4333,10 @@ const BuyNowFlow = () => {
         return { orderListItems, invoiceItems, serviceRows: billableServiceRows, productRows, itemsTotal: orderListTotal, hasCustomServiceFeeRows };
     };
 
-    const getBuyNowStateFeeFallback = () => {
+    /** True only for real bundle checkouts — not battery/inverter/panels-only product paths. */
+    const isBuyNowBundleCheckout = () => (formData.selectedBundles || []).length > 0;
+
+    const getBuyNowCheckoutFeeFallback = () => {
         const selectedState = states.find((s) => s.id === formData.stateId);
         const deliveryFee = resolveFlowDeliveryFee({
             productCategory: formData.productCategory,
@@ -4330,11 +4344,18 @@ const BuyNowFlow = () => {
             defaultDeliveryFee: checkoutSettings?.delivery_fee,
             stateDeliveryFee: selectedState?.default_delivery_fee,
         });
+        const installerIsTroosolar = (formData.installerChoice || 'troosolar') !== 'own';
+        const installationFee = installerIsTroosolar
+            ? Number(checkoutSettings?.installation_flat_addon || 0)
+            : 0;
 
-        return { deliveryFee, installationFee: 0, inspectionFee: 0 };
+        return { deliveryFee, installationFee, inspectionFee: 0 };
     };
 
     const getBuyNowBundleServiceFees = () => {
+        if (!isBuyNowBundleCheckout()) {
+            return { deliveryFee: 0, installationFee: 0, inspectionFee: 0, materialCost: 0 };
+        }
         const fees = aggregateBundleServiceFees(
             formData.selectedBundles,
             (bundle) => extractBundleLineItems(bundle).serviceRows
@@ -4354,9 +4375,10 @@ const BuyNowFlow = () => {
         const productsTotal = formData.selectedProducts.reduce((sum, p) => sum + (p.price * (p.quantity || 1)), 0);
         const itemsSubtotal = bundlesTotal + productsTotal;
         const basePrice = itemsSubtotal > 0 ? itemsSubtotal : formData.selectedProductPrice;
-        const feeFallback = ((formData.selectedBundles || []).length > 0 || formData.selectedBundle || formData.selectedBundleId)
+        // Bundle: invoice-tab fees only. Product-only: Shop Checkout category fees.
+        const feeFallback = isBuyNowBundleCheckout()
             ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
-            : (resolvedFees || getBuyNowStateFeeFallback());
+            : (resolvedFees || getBuyNowCheckoutFeeFallback());
 
         const bundleSections = formData.selectedBundles.map((sb) => {
             const bundleQty = sb.quantity || 1;
@@ -4429,16 +4451,13 @@ const BuyNowFlow = () => {
         const details = detailsOverride || invoiceDetails;
         const vatPercent = Number(details?.vat_percentage || checkoutSettings?.vat_percentage || 7.5);
         const insurancePercent = resolveCheckoutInsurancePercent(checkoutSettings, details);
-        const hasBundles = (formData.selectedBundles || []).length > 0
-            || !!formData.selectedBundle
-            || !!formData.selectedBundleId;
-        // Bundles: fees only from Bundle Mgt → Invoice fees. Never state/global checkout fallback.
-        const stateFeeFallback = hasBundles
+        const hasBundles = isBuyNowBundleCheckout();
+        const checkoutFeeFallback = hasBundles
             ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
-            : getBuyNowStateFeeFallback();
+            : getBuyNowCheckoutFeeFallback();
         const bundleServiceFees = getBuyNowBundleServiceFees();
         const { bundleSections, productRows, catalogSubtotal } = buildBuyNowOrderListSections({
-            resolvedFees: stateFeeFallback,
+            resolvedFees: checkoutFeeFallback,
         });
 
         let bundleInvoiceSections = bundleSections.map((sec) => ({
@@ -4483,15 +4502,18 @@ const BuyNowFlow = () => {
                     : 0),
         };
 
-        // For bundles, never inherit stale/global API fee fields — only bundle invoice-tab amounts.
         if (hasBundles) {
+            // Bundles: Invoice fees tab only — never checkout category defaults.
             pricingDetails.delivery_fee = Number(bundleServiceFees.deliveryFee || 0);
             pricingDetails.installation_fee = Number(bundleServiceFees.installationFee || 0);
             pricingDetails.inspection_fee = Number(bundleServiceFees.inspectionFee || 0);
             pricingDetails.material_cost = Number(bundleServiceFees.materialCost || 0);
-            // Drop any prior checkout fee fields that may still be on invoiceDetails.
-            delete pricingDetails.deliveryFee;
-            delete pricingDetails.default_delivery_fee;
+        } else {
+            // Product-only (battery / inverter / panels): Shop Checkout settings by category.
+            pricingDetails.delivery_fee = Number(checkoutFeeFallback.deliveryFee || 0);
+            pricingDetails.installation_fee = Number(checkoutFeeFallback.installationFee || 0);
+            pricingDetails.inspection_fee = 0;
+            pricingDetails.material_cost = 0;
         }
 
         const invoiceTotals = computeBuyNowInvoiceTotals({
@@ -4500,8 +4522,13 @@ const BuyNowFlow = () => {
             bundleNetTotal: 0,
             catalogSubtotal,
             vatPercent,
-            bundleServiceFees,
-            stateFeeFallback,
+            bundleServiceFees: hasBundles ? bundleServiceFees : {
+                deliveryFee: checkoutFeeFallback.deliveryFee,
+                installationFee: checkoutFeeFallback.installationFee,
+                inspectionFee: 0,
+                materialCost: 0,
+            },
+            stateFeeFallback: checkoutFeeFallback,
             bundleFeesOnly: hasBundles,
         });
 
