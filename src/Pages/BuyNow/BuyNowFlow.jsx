@@ -4348,8 +4348,11 @@ const BuyNowFlow = () => {
         const installationFee = installerIsTroosolar
             ? Number(checkoutSettings?.installation_flat_addon || 0)
             : 0;
+        const materialCost = buyNowMaterialFeeApplies(formData.installerChoice, formData.includeInstallationMaterial)
+            ? Number(checkoutSettings?.installation_materials_cost || 0)
+            : 0;
 
-        return { deliveryFee, installationFee, inspectionFee: 0 };
+        return { deliveryFee, installationFee, inspectionFee: 0, materialCost };
     };
 
     const getBuyNowBundleServiceFees = () => {
@@ -4377,7 +4380,7 @@ const BuyNowFlow = () => {
         const basePrice = itemsSubtotal > 0 ? itemsSubtotal : formData.selectedProductPrice;
         // Bundle: invoice-tab fees only. Product-only: Shop Checkout category fees.
         const feeFallback = isBuyNowBundleCheckout()
-            ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
+            ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0, materialCost: 0 }
             : (resolvedFees || getBuyNowCheckoutFeeFallback());
 
         const bundleSections = formData.selectedBundles.map((sb) => {
@@ -4453,7 +4456,7 @@ const BuyNowFlow = () => {
         const insurancePercent = resolveCheckoutInsurancePercent(checkoutSettings, details);
         const hasBundles = isBuyNowBundleCheckout();
         const checkoutFeeFallback = hasBundles
-            ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0 }
+            ? { deliveryFee: 0, installationFee: 0, inspectionFee: 0, materialCost: 0 }
             : getBuyNowCheckoutFeeFallback();
         const bundleServiceFees = getBuyNowBundleServiceFees();
         const { bundleSections, productRows, catalogSubtotal } = buildBuyNowOrderListSections({
@@ -4513,7 +4516,7 @@ const BuyNowFlow = () => {
             pricingDetails.delivery_fee = Number(checkoutFeeFallback.deliveryFee || 0);
             pricingDetails.installation_fee = Number(checkoutFeeFallback.installationFee || 0);
             pricingDetails.inspection_fee = 0;
-            pricingDetails.material_cost = 0;
+            pricingDetails.material_cost = Number(checkoutFeeFallback.materialCost || 0);
         }
 
         const invoiceTotals = computeBuyNowInvoiceTotals({
@@ -4526,7 +4529,7 @@ const BuyNowFlow = () => {
                 deliveryFee: checkoutFeeFallback.deliveryFee,
                 installationFee: checkoutFeeFallback.installationFee,
                 inspectionFee: 0,
-                materialCost: 0,
+                materialCost: checkoutFeeFallback.materialCost,
             },
             stateFeeFallback: checkoutFeeFallback,
             bundleFeesOnly: hasBundles,
