@@ -443,7 +443,7 @@ const computeBuyNowInvoiceTotals = ({
     const materialCost = pickBundleScopedFee(
         feeAmount('material'),
         bundleFees.materialCost,
-        0,
+        stateFees.materialCost,
         bundleFeesOnly
     );
     const inspectionFee = pickBundleScopedFee(
@@ -2194,6 +2194,23 @@ const BuyNowFlow = () => {
         };
         fetchConfig();
     }, []);
+
+    // Refresh checkout settings before options/invoice so Admin fee changes (materials, delivery) apply.
+    React.useEffect(() => {
+        if (![4, 7, 7.5, 5].includes(step)) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const checkoutRes = await axios.get(API.CONFIG_CHECKOUT_SETTINGS);
+                if (!cancelled && checkoutRes.data?.status === 'success') {
+                    setCheckoutSettings(checkoutRes.data.data || null);
+                }
+            } catch {
+                /* keep previous settings */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [step]);
 
     // Prefill contact from logged-in user (once)
     React.useEffect(() => {
@@ -4348,8 +4365,15 @@ const BuyNowFlow = () => {
         const installationFee = installerIsTroosolar
             ? Number(checkoutSettings?.installation_flat_addon || 0)
             : 0;
+        // Support both current and legacy response key shapes from /config/checkout-settings
+        const materialsFromSettings = Number(
+            checkoutSettings?.installation_materials_cost
+            ?? checkoutSettings?.installation_material_cost
+            ?? checkoutSettings?.material_cost
+            ?? 0
+        );
         const materialCost = buyNowMaterialFeeApplies(formData.installerChoice, formData.includeInstallationMaterial)
-            ? Number(checkoutSettings?.installation_materials_cost || 0)
+            ? materialsFromSettings
             : 0;
 
         return { deliveryFee, installationFee, inspectionFee: 0, materialCost };
