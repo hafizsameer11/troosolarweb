@@ -12,7 +12,7 @@ import {
     filterBillableInvoiceFees,
 } from '../../utils/invoiceFees';
 import PaymentSummaryCard from '../../Component/OrderComponents/PaymentSummaryCard';
-import { resolveFlowDeliveryFee } from '../../utils/categoryDeliveryFees';
+import { resolveProductOnlyCheckoutFees, inferProductFeeCategory } from '../../utils/buyNowProductFees';
 import {
   formatInsurancePercentLabel,
   resolveCheckoutInsurancePercent,
@@ -1727,7 +1727,8 @@ const BuyNowFlow = () => {
                     id: product.id,
                     product: product,
                     price: price,
-                    quantity: 1
+                    quantity: 1,
+                    feeCategory: inferProductFeeCategory(product, prev.productCategory),
                 }];
             }
             
@@ -4355,41 +4356,14 @@ const BuyNowFlow = () => {
 
     const getBuyNowCheckoutFeeFallback = () => {
         const selectedState = states.find((s) => s.id === formData.stateId);
-        const categoryKey = formData.productCategory || '';
-        const deliveryFee = resolveFlowDeliveryFee({
-            productCategory: categoryKey,
-            categoryDeliveryFees: checkoutSettings?.category_delivery_fees,
-            defaultDeliveryFee: checkoutSettings?.delivery_fee,
+        return resolveProductOnlyCheckoutFees({
+            selectedProducts: formData.selectedProducts,
+            fallbackCategory: formData.productCategory,
+            checkoutSettings,
+            installerChoice: formData.installerChoice || 'troosolar',
+            includeInstallationMaterial: formData.includeInstallationMaterial,
             stateDeliveryFee: selectedState?.default_delivery_fee,
         });
-        const installerIsTroosolar = (formData.installerChoice || 'troosolar') !== 'own';
-        const categoryInstallation = Number(
-            checkoutSettings?.category_installation_fees?.[categoryKey]
-            ?? checkoutSettings?.installation_flat_addon
-            ?? 0
-        );
-        const installationFee = installerIsTroosolar ? categoryInstallation : 0;
-        const categoryInspection = Number(
-            checkoutSettings?.category_inspection_fees?.[categoryKey] ?? 0
-        );
-        const includeMaterialsOptIn = buyNowMaterialFeeApplies(
-            formData.installerChoice,
-            formData.includeInstallationMaterial
-        );
-        const ownInstallerGetsInspection = !!checkoutSettings?.own_installer_include_inspection;
-        // TrooSolar: always. Own Installer: only if Admin enabled it AND materials checkbox is checked.
-        const inspectionFee = installerIsTroosolar
-            ? categoryInspection
-            : (ownInstallerGetsInspection && includeMaterialsOptIn ? categoryInspection : 0);
-        const categoryMaterials = Number(
-            checkoutSettings?.category_materials_fees?.[categoryKey]
-            ?? checkoutSettings?.installation_materials_cost
-            ?? checkoutSettings?.installation_material_cost
-            ?? 0
-        );
-        const materialCost = includeMaterialsOptIn ? categoryMaterials : 0;
-
-        return { deliveryFee, installationFee, inspectionFee, materialCost };
     };
 
     const getBuyNowBundleServiceFees = () => {
