@@ -40,11 +40,14 @@ const buildOrderPaymentBreakdown = (rawData) => {
   const catalogSubtotal =
     parseMoney(rawData.catalog_items_subtotal) || itemsFromLines;
   const isBuyNow = String(rawData.order_type || "").toLowerCase() === "buy_now";
-  let itemsAfterDiscount =
-    parseMoney(rawData.items_subtotal) ||
-    parseMoney(rawData.product_price) ||
-    catalogSubtotal;
   let discount = parseMoney(rawData.online_checkout_discount_amount);
+  let itemsAfterDiscount = isBuyNow
+    ? (parseMoney(rawData.product_price) ||
+        parseMoney(rawData.items_subtotal) ||
+        catalogSubtotal)
+    : (parseMoney(rawData.items_subtotal) ||
+        parseMoney(rawData.product_price) ||
+        catalogSubtotal);
 
   const delivery = parseMoney(rawData.delivery_fee);
   const installation = parseMoney(rawData.installation_price);
@@ -59,6 +62,19 @@ const buildOrderPaymentBreakdown = (rawData) => {
 
   if (discount <= 0 && catalogSubtotal > itemsAfterDiscount + 0.005) {
     discount = catalogSubtotal - itemsAfterDiscount;
+  }
+
+  if (
+    isBuyNow &&
+    discount <= 0 &&
+    catalogSubtotal > 0 &&
+    orderTotal > 0
+  ) {
+    const inferredNet = orderTotal - vat - insurance - serviceFeesTotal;
+    if (inferredNet > 0 && inferredNet + 0.005 < catalogSubtotal) {
+      itemsAfterDiscount = inferredNet;
+      discount = catalogSubtotal - inferredNet;
+    }
   }
 
   if (
@@ -89,11 +105,18 @@ const buildOrderPaymentBreakdown = (rawData) => {
   const outrightDiscountPct =
     pctRaw != null && String(pctRaw).trim() !== ""
       ? Math.round(Number(pctRaw))
+      : isBuyNow && discount > 0 && catalogSubtotal > 0
+      ? Math.round((discount / catalogSubtotal) * 100)
       : isBuyNow
       ? 10
       : discount > 0 && catalogSubtotal > 0
       ? Math.round((discount / catalogSubtotal) * 100)
       : null;
+
+  if (isBuyNow && discount <= 0 && catalogSubtotal > 0 && outrightDiscountPct > 0) {
+    discount = Math.round((catalogSubtotal * outrightDiscountPct) / 100 * 100) / 100;
+    itemsAfterDiscount = Math.max(0, catalogSubtotal - discount);
+  }
   const discountPctLabel =
     outrightDiscountPct != null && String(outrightDiscountPct).trim() !== ""
       ? ` (${outrightDiscountPct}%)`
