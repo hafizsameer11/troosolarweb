@@ -112,25 +112,26 @@ const resolveSummedDeliveryFee = ({
     defaultDeliveryFee,
     stateDeliveryFee,
 }) => {
+    const keys = categoryKeys.length > 0
+        ? categoryKeys
+        : (PRODUCT_ONLY_FEE_CATEGORIES.has(fallbackCategory) ? [fallbackCategory] : []);
+
+    // Multiple product categories: always sum category delivery fees (never a single state override).
+    if (keys.length > 1) {
+        return sumCategoryFeeAmounts(keys, categoryDeliveryFees, defaultDeliveryFee);
+    }
+
     const stateFee = stateDeliveryFee != null ? Number(stateDeliveryFee) : null;
     if (stateFee != null && stateFee > 0) {
         return stateFee;
     }
 
-    const keys = categoryKeys.length > 0
-        ? categoryKeys
-        : (PRODUCT_ONLY_FEE_CATEGORIES.has(fallbackCategory) ? [fallbackCategory] : []);
-
-    if (keys.length <= 1) {
-        return resolveFlowDeliveryFee({
-            productCategory: keys[0] || fallbackCategory,
-            categoryDeliveryFees,
-            defaultDeliveryFee,
-            stateDeliveryFee: null,
-        });
-    }
-
-    return sumCategoryFeeAmounts(keys, categoryDeliveryFees, defaultDeliveryFee);
+    return resolveFlowDeliveryFee({
+        productCategory: keys[0] || fallbackCategory,
+        categoryDeliveryFees,
+        defaultDeliveryFee,
+        stateDeliveryFee: null,
+    });
 };
 
 /**

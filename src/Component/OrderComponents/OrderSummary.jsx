@@ -38,7 +38,11 @@ const buildOrderPaymentBreakdown = (rawData) => {
 
   const catalogSubtotal =
     parseMoney(rawData.catalog_items_subtotal) || itemsFromLines;
-  let itemsAfterDiscount = parseMoney(rawData.items_subtotal) || catalogSubtotal;
+  const isBuyNow = String(rawData.order_type || "").toLowerCase() === "buy_now";
+  let itemsAfterDiscount =
+    parseMoney(rawData.items_subtotal) ||
+    parseMoney(rawData.product_price) ||
+    catalogSubtotal;
   let discount = parseMoney(rawData.online_checkout_discount_amount);
 
   const delivery = parseMoney(rawData.delivery_fee);
@@ -57,10 +61,10 @@ const buildOrderPaymentBreakdown = (rawData) => {
   }
 
   if (
+    !isBuyNow &&
     discount <= 0 &&
     catalogSubtotal > 0 &&
-    orderTotal > 0 &&
-    String(rawData.order_type || "").toLowerCase() === "buy_now"
+    orderTotal > 0
   ) {
     const inferredAfter = orderTotal - serviceFeesTotal - vat - insurance;
     if (inferredAfter > 0 && inferredAfter + 0.005 < catalogSubtotal) {
@@ -69,7 +73,7 @@ const buildOrderPaymentBreakdown = (rawData) => {
     }
   }
 
-  if (vat <= 0 && itemsAfterDiscount > 0 && orderTotal > 0) {
+  if (!isBuyNow && vat <= 0 && itemsAfterDiscount > 0 && orderTotal > 0) {
     const totalAmountBeforeVat = itemsAfterDiscount + serviceFeesTotal;
     const expectedVat = Math.round(totalAmountBeforeVat * (vatPct / 100) * 100) / 100;
     if (Math.abs(orderTotal - (totalAmountBeforeVat + expectedVat + insurance)) < 1) {
@@ -84,7 +88,7 @@ const buildOrderPaymentBreakdown = (rawData) => {
   const outrightDiscountPct =
     pctRaw != null && String(pctRaw).trim() !== ""
       ? Math.round(Number(pctRaw))
-      : String(rawData.order_type || "").toLowerCase() === "buy_now"
+      : isBuyNow
       ? 10
       : discount > 0 && catalogSubtotal > 0
       ? Math.round((discount / catalogSubtotal) * 100)
