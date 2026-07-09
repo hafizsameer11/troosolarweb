@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import { Check, ChevronLeft, Star, Loader2 } from "lucide-react";
 import ReviewModal from "./ReviewModal";
 import { assets } from "../../assets/data";
-import API, { BASE_URL } from "../../config/api.config";
+import API from "../../config/api.config";
 import axios from "axios";
 import Loading from "../Loading";
 import PaymentSummaryCard from "./PaymentSummaryCard";
+import { resolveLineItemImageUrl } from "../../utils/mediaUrl";
 
 /** Fallback image when item has no featured_image */
 const PLACEHOLDER_IMAGE = "https://api.troosolar.com/storage/products/d5c7f116-57ed-46ef-a659-337c94c308a9.png";
@@ -433,11 +434,7 @@ const OrderSummary = ({ order, onBack }) => {
               Number(data.installation_price) > 0
                 ? `₦${Number(data.installation_price).toLocaleString()}`
                 : null,
-            productImage: (() => {
-              const img = data.items?.[0]?.item?.featured_image;
-              if (!img) return PLACEHOLDER_IMAGE;
-              return img.startsWith("http") ? img : `${BASE_URL.replace("/api", "")}${img}`;
-            })(),
+            productImage: resolveLineItemImageUrl(data.items?.[0], PLACEHOLDER_IMAGE),
             technicianName: data.installation?.technician_name,
             userInfo: data.user_info,
             includeUserInfo: data.viewer_account ?? data.include_user_info,
@@ -787,10 +784,7 @@ const OrderSummary = ({ order, onBack }) => {
           <div className="bg-white rounded-2xl p-2 border border-gray-400 space-y-4">
             {Array.isArray(orderData.items) && orderData.items.length > 0 ? (
               orderData.items.map((lineItem, idx) => {
-                const rawImg = lineItem?.item?.featured_image;
-                const img = rawImg
-                  ? (rawImg.startsWith("http") ? rawImg : `${BASE_URL.replace("/api", "")}${rawImg}`)
-                  : PLACEHOLDER_IMAGE;
+                const img = resolveLineItemImageUrl(lineItem, PLACEHOLDER_IMAGE);
                 const qty = Number(lineItem?.quantity) || 1;
                 const lineSubtotal = parseMoney(lineItem?.subtotal);
                 const unitPrice = parseMoney(lineItem?.unit_price);
@@ -817,6 +811,10 @@ const OrderSummary = ({ order, onBack }) => {
                           src={img}
                           alt={lineTitle}
                           className="w-16 h-16 bg-gray-200 rounded-lg object-cover"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = PLACEHOLDER_IMAGE;
+                          }}
                         />
                       </Link>
                     ) : (
@@ -825,6 +823,10 @@ const OrderSummary = ({ order, onBack }) => {
                           src={img}
                           alt={lineTitle}
                           className="w-16 h-16 bg-gray-200 rounded-lg object-cover"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = PLACEHOLDER_IMAGE;
+                          }}
                         />
                       </div>
                     )}
@@ -890,6 +892,10 @@ const OrderSummary = ({ order, onBack }) => {
                     src={orderData.productImage || PLACEHOLDER_IMAGE}
                     alt={orderData.productName}
                     className="w-16 h-16 bg-gray-200 rounded-lg object-cover"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = PLACEHOLDER_IMAGE;
+                    }}
                   />
                 </div>
                 <div className="flex-1 min-w-0">
