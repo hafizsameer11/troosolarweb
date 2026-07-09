@@ -187,7 +187,7 @@ export const resolveProductOnlyCheckoutFees = ({
     if (ownMaterialsOptIn) {
         return {
             deliveryFee,
-            installationFee,
+            installationFee: 0,
             inspectionFee: ownInstallerGetsInspection ? inspectionFee : 0,
             materialCost,
         };
