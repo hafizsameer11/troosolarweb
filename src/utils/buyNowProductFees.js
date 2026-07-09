@@ -147,7 +147,6 @@ export const resolveProductOnlyCheckoutFees = ({
     const categoryKeys = resolveSelectedProductFeeCategories(selectedProducts, fallbackCategory);
     const installerIsTroosolar = installerChoice !== 'own';
     const ownMaterialsOptIn = installerChoice === 'own' && !!includeInstallationMaterial;
-    const ownInstallerGetsInspection = !!checkoutSettings?.own_installer_include_inspection;
 
     const deliveryFee = resolveSummedDeliveryFee({
         categoryKeys,
@@ -188,7 +187,7 @@ export const resolveProductOnlyCheckoutFees = ({
         return {
             deliveryFee,
             installationFee: 0,
-            inspectionFee: ownInstallerGetsInspection ? inspectionFee : 0,
+            inspectionFee: 0,
             materialCost,
         };
     }
