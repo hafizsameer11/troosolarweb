@@ -5744,7 +5744,10 @@ const BuyNowFlow = () => {
                         <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
                             <p className="text-sm text-blue-700">
                                 <Calendar size={16} className="inline mr-2" />
-                                Installation scheduled for: <span className="font-bold">
+                                {formData.installerChoice === 'own'
+                                    ? 'Delivery scheduled for:'
+                                    : 'Installation scheduled for:'}{' '}
+                                <span className="font-bold">
                                     {new Date(selectedSlot.date).toLocaleDateString('en-NG', { weekday: 'long', month: 'long', day: 'numeric' })}
                                 </span>
                             </p>
