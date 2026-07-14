@@ -2,6 +2,9 @@
 export const BASE_URL = 'https://api.troosolar.com/api';
 export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
 
+/** Flutterwave checkout public key (test). Replace with live FLWPUBK_… for production. */
+export const FLUTTERWAVE_PUBLIC_KEY = 'FLWPUBK_TEST-f9d25012d81f53b200af745c9c6bf597-X';
+
 // export const BASE_URL = 'http://127.0.0.1:8000/api';
 
 const API = {

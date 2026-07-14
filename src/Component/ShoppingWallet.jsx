@@ -2,7 +2,7 @@ import { Eye, EyeOff, X } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import { assets } from "../assets/data";
 import axios from "axios";
-import API from "../config/api.config";
+import API, { FLUTTERWAVE_PUBLIC_KEY } from "../config/api.config";
 
 const ShoppingWallet = () => {
   const [showAmount, setShowAmount] = useState(true); // true => amount visible (eye open), false => hidden (eye closed)
@@ -88,7 +88,7 @@ const ShoppingWallet = () => {
       const txRef = "txref_" + Date.now();
 
       window.FlutterwaveCheckout({
-        public_key: "FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X",
+        public_key: FLUTTERWAVE_PUBLIC_KEY,
         tx_ref: txRef,
         amount: amountNumber,
         currency: "NGN",

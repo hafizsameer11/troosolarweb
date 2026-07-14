@@ -7,7 +7,7 @@ import SideBar from "../Component/SideBar";
 import { RxCrossCircled } from "react-icons/rx";
 import { GiCheckMark } from "react-icons/gi";
 import TopNavbar from "../Component/TopNavbar";
-import API, { BASE_URL } from "../config/api.config";
+import API, { BASE_URL, FLUTTERWAVE_PUBLIC_KEY } from "../config/api.config";
 import { ContextApi } from "../Context/AppContext";
 import { loginPathWithReturn } from "../utils/authRedirect";
 import { persistSessionFromCartAccess } from "../utils/cartAccessAuth";
@@ -1010,7 +1010,7 @@ const Cart = () => {
 
       await new Promise((resolve) => {
         window.FlutterwaveCheckout({
-          public_key: "FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X",
+          public_key: FLUTTERWAVE_PUBLIC_KEY,
           tx_ref: txRef,
           amount,
           currency: "NGN",

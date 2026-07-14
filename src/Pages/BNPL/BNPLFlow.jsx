@@ -4,7 +4,7 @@ import { Home, Building2, Factory, ArrowRight, ArrowLeft, Zap, Wrench, FileText,
 import LoanCalculator from '../../Component/LoanCalculator';
 import AuditPreferredScheduleFields from '../../Component/AuditPreferredScheduleFields';
 import axios from 'axios';
-import API, { BASE_URL } from '../../config/api.config';
+import API, { BASE_URL, FLUTTERWAVE_PUBLIC_KEY } from '../../config/api.config';
 import {
     fetchUserMonoAccount,
     linkMonoAccountFromCode,
@@ -4011,7 +4011,7 @@ const BNPLFlow = () => {
             const userName = userInfo.name || userInfo.full_name || 'Customer';
 
             window.FlutterwaveCheckout({
-                public_key: "FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X", // TODO: Move to env variable
+                public_key: FLUTTERWAVE_PUBLIC_KEY,
                 tx_ref: txRef,
                 amount: depositAmount,
                 currency: "NGN",
@@ -4130,7 +4130,7 @@ const BNPLFlow = () => {
             const userName = userInfo.name || userInfo.full_name || 'Customer';
 
             window.FlutterwaveCheckout({
-                public_key: "FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X", // TODO: Move to env variable
+                public_key: FLUTTERWAVE_PUBLIC_KEY,
                 tx_ref: txRef,
                 amount: auditFee,
                 currency: "NGN",
@@ -4997,7 +4997,7 @@ const BNPLFlow = () => {
             const userName = userInfo.name || userInfo.full_name || userInfo.user?.name || userInfo.data?.name || 'Customer';
 
             window.FlutterwaveCheckout({
-                public_key: "FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X",
+                public_key: FLUTTERWAVE_PUBLIC_KEY,
                 tx_ref: txRef,
                 amount: creditCheckFee,
                 currency: "NGN",

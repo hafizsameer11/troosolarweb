@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
 import axios from "axios";
-import API from "../config/api.config";
+import API, { FLUTTERWAVE_PUBLIC_KEY } from "../config/api.config";
 
 /* ---------------- Load Flutterwave Script ---------------- */
 const ensureFlutterwave = () =>
@@ -37,8 +37,7 @@ const RepayModal = ({ id, isOpen, onClose }) => {
       const outerTxRef = "txref_" + Date.now();
 
       window.FlutterwaveCheckout({
-        public_key:
-          "FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X", // TODO: replace in prod
+        public_key: FLUTTERWAVE_PUBLIC_KEY,
         tx_ref: outerTxRef,
         amount: n,
         currency: "NGN",

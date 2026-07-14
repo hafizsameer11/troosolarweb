@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Wallet, CreditCard, Building, ArrowRight } from 'lucide-react';
 import axios from 'axios';
-import API from '../config/api.config';
+import API, { FLUTTERWAVE_PUBLIC_KEY } from '../config/api.config';
 
 /* ---------------- Load Flutterwave Script ---------------- */
 const ensureFlutterwave = () =>
@@ -170,7 +170,7 @@ const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSu
       const userPhone = userInfo?.phone || userInfo?.phone_number || '';
 
       window.FlutterwaveCheckout({
-        public_key: 'FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X', // TODO: Move to env variable
+        public_key: FLUTTERWAVE_PUBLIC_KEY,
         tx_ref: txRef,
         amount: amount,
         currency: 'NGN',

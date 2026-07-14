@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Home, Building2, Factory, ArrowRight, ArrowLeft, Zap, Wrench, FileText, CheckCircle, Battery, Sun, Monitor, Shield, Calendar, Loader, CheckCircle2, XCircle, AlertCircle, CreditCard, Minus, Plus, X, Info, ChevronDown, ChevronLeft, ChevronRight, User, MapPin, Phone } from 'lucide-react';
 import axios from 'axios';
-import API, { BASE_URL } from '../../config/api.config';
+import API, { BASE_URL, FLUTTERWAVE_PUBLIC_KEY } from '../../config/api.config';
 import ProductPromoBadges from '../../Component/ProductPromoBadges';
 import AuditPreferredScheduleFields from '../../Component/AuditPreferredScheduleFields';
 import GridPagination from '../../Component/GridPagination';
@@ -2116,7 +2116,7 @@ const BuyNowFlow = () => {
             const userName = (formData.fullName?.trim() || userInfo.name || userInfo.full_name || [userInfo.first_name, userInfo.sur_name].filter(Boolean).join(' ') || 'Customer').trim();
 
             window.FlutterwaveCheckout({
-                public_key: "FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X", // TODO: Move to env variable
+                public_key: FLUTTERWAVE_PUBLIC_KEY,
                 tx_ref: txRef,
                 amount: amount,
                 currency: "NGN",

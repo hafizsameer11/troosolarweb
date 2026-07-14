@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import SideBar from '../Component/SideBar';
 import TopNavbar from '../Component/TopNavbar';
 import axios from 'axios';
-import API from '../config/api.config';
+import API, { FLUTTERWAVE_PUBLIC_KEY } from '../config/api.config';
 import { loginPathWithReturn } from '../utils/authRedirect';
 import { 
   CheckCircle, 
@@ -609,7 +609,7 @@ const BNPLLoanDetails = () => {
             const userPhone = userInfo?.phone || userInfo?.phone_number || '';
 
             window.FlutterwaveCheckout({
-                public_key: 'FLWPUBK_TEST-dd1514f7562b1d623c4e63fb58b6aedb-X',
+                public_key: FLUTTERWAVE_PUBLIC_KEY,
                 tx_ref: txRef,
                 amount: downPaymentAmount,
                 currency: 'NGN',
