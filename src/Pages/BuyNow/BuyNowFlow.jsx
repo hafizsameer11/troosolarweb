@@ -1935,9 +1935,14 @@ const BuyNowFlow = () => {
                 property_address: formatBuyNowInstallationAddress(),
                 contact_name: formData.fullName?.trim() || undefined,
                 contact_phone: formData.phone?.trim() || undefined,
+                is_gated_estate: !!formData.isGatedEstate,
             };
             if (formData.floors) payload.property_floors = Number(formData.floors) || null;
             if (formData.rooms) payload.property_rooms = Number(formData.rooms) || null;
+            if (formData.isGatedEstate) {
+                if (formData.estateName?.trim()) payload.estate_name = formData.estateName.trim();
+                if (formData.estateAddress?.trim()) payload.estate_address = formData.estateAddress.trim();
+            }
 
             const catalogProductSelections = formData.selectedProducts.filter(isRealCatalogProductSelection);
 
