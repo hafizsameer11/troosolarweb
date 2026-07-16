@@ -1479,6 +1479,7 @@ const BNPLFlow = () => {
             const auditRequestPayload = {
                 audit_type: formData.auditType,
                 customer_type: formData.customerType,
+                product_category: formData.productCategory || undefined,
                 source: 'bnpl',
                 property_state: formData.state,
                 property_address: fullAddress || formData.address,

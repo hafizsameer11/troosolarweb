@@ -1564,6 +1564,7 @@ const BuyNowFlow = () => {
             const auditRequestPayload = {
                 audit_type: formData.auditType,
                 customer_type: formData.customerType,
+                product_category: formData.productCategory || undefined,
                 source: 'buy_now',
                 property_state: formData.state,
                 property_address: fullAddress || formData.address,
