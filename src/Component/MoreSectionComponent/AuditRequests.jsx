@@ -353,6 +353,30 @@ const AuditRequests = () => {
                           </dd>
                         </div>
                       )}
+                      {row.audit_type !== "commercial" &&
+                        row.is_gated_estate !== undefined &&
+                        row.is_gated_estate !== null && (
+                        <div>
+                          <dt className="text-gray-500">Gated estate</dt>
+                          <dd className="font-medium text-gray-900">
+                            {row.is_gated_estate ? "Yes" : "No"}
+                          </dd>
+                        </div>
+                      )}
+                      {row.is_gated_estate && row.estate_name ? (
+                        <div>
+                          <dt className="text-gray-500">Estate name</dt>
+                          <dd className="font-medium text-gray-900">{row.estate_name}</dd>
+                        </div>
+                      ) : null}
+                      {row.is_gated_estate && row.estate_address ? (
+                        <div className="sm:col-span-2">
+                          <dt className="text-gray-500">Estate address</dt>
+                          <dd className="font-medium text-gray-900 whitespace-pre-wrap">
+                            {row.estate_address}
+                          </dd>
+                        </div>
+                      ) : null}
                       {row.facility_description ? (
                         <div className="sm:col-span-2">
                           <dt className="text-gray-500">Facility description</dt>
