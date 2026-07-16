@@ -55,6 +55,18 @@ const labelAuditRequestChoice = (row) => {
   return customerType || auditTarget || "—";
 };
 
+const labelProductCategory = (value) => {
+  const v = String(value || "").toLowerCase().trim();
+  if (!v) return null;
+  if (v === "full-kit") return "Solar panels, inverter, and battery solution";
+  if (v === "inverter-battery") return "Inverter and battery solution";
+  if (v === "battery-only") return "Battery only";
+  if (v === "inverter-only") return "Inverter only";
+  if (v === "panels-only") return "Solar panels only";
+  if (v === "audit") return "Professional energy audit";
+  return String(value).replace(/-/g, " ");
+};
+
 const statusStyle = (s) => {
   const v = String(s || "").toLowerCase();
   if (v === "approved") return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -289,6 +301,11 @@ const AuditRequests = () => {
                       {labelAuditRequestChoice(row)}
                       {row.company_name ? ` · ${row.company_name}` : ""}
                     </p>
+                    {labelProductCategory(row.product_category) ? (
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                        {labelProductCategory(row.product_category)}
+                      </p>
+                    ) : null}
                     <p className="text-xs text-gray-500 mt-1">
                       Submitted {formatWhen(row.created_at)} · Source:{" "}
                       {sourceLabel(row.source)}
@@ -338,6 +355,14 @@ const AuditRequests = () => {
                           <dt className="text-gray-500">Building type</dt>
                           <dd className="font-medium text-gray-900">
                             {row.building_type}
+                          </dd>
+                        </div>
+                      ) : null}
+                      {labelProductCategory(row.product_category) ? (
+                        <div className="sm:col-span-2">
+                          <dt className="text-gray-500">Solution</dt>
+                          <dd className="font-medium text-gray-900">
+                            {labelProductCategory(row.product_category)}
                           </dd>
                         </div>
                       ) : null}
