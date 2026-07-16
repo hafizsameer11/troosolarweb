@@ -37,6 +37,24 @@ const labelAuditType = (row) => {
   return row.audit_type || "—";
 };
 
+const labelCustomerType = (value) => {
+  const v = String(value || "").toLowerCase().trim();
+  if (!v) return null;
+  if (v === "residential") return "Residential";
+  if (v === "sme") return "SME";
+  if (v === "commercial") return "Commercial";
+  return String(value);
+};
+
+const labelAuditRequestChoice = (row) => {
+  const customerType = labelCustomerType(row?.customer_type);
+  const auditTarget = labelAuditType(row);
+  if (customerType && auditTarget && auditTarget !== "—") {
+    return `${customerType} / ${auditTarget}`;
+  }
+  return customerType || auditTarget || "—";
+};
+
 const statusStyle = (s) => {
   const v = String(s || "").toLowerCase();
   if (v === "approved") return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -268,7 +286,7 @@ const AuditRequests = () => {
                       </span>
                     </div>
                     <p className="text-sm text-gray-700 font-medium truncate">
-                      {labelAuditType(row)}
+                      {labelAuditRequestChoice(row)}
                       {row.company_name ? ` · ${row.company_name}` : ""}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
