@@ -85,7 +85,7 @@ const formatPaymentTime = (time24) => {
   return d.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" });
 };
 
-const hasAuditPaymentDetails = (row) =>
+const hasAuditApprovalDetails = (row) =>
   row?.approval_payment_date ||
   row?.approval_payment_time ||
   row?.approval_payment_amount != null ||
@@ -356,24 +356,24 @@ const AuditRequests = () => {
                         </div>
                       ) : null}
                       {String(row.status || "").toLowerCase() === "approved" &&
-                        hasAuditPaymentDetails(row) && (
+                        hasAuditApprovalDetails(row) && (
                           <div className="sm:col-span-2 mt-2">
                             <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 space-y-3">
                               <p className="text-sm font-semibold text-emerald-900">
-                                Audit payment instructions
+                                Audit visit details and payment instructions
                               </p>
                               <p className="text-xs text-emerald-800">
-                                Your audit has been approved. Please complete payment using the details below.
+                                Your audit has been approved. The details below show when the team will come for the audit and how to make payment before the visit.
                               </p>
                               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                                 <div>
-                                  <dt className="text-emerald-700">Payment date</dt>
+                                  <dt className="text-emerald-700">Audit date</dt>
                                   <dd className="font-medium text-gray-900">
                                     {formatPaymentDate(row.approval_payment_date)}
                                   </dd>
                                 </div>
                                 <div>
-                                  <dt className="text-emerald-700">Payment time</dt>
+                                  <dt className="text-emerald-700">Audit time</dt>
                                   <dd className="font-medium text-gray-900">
                                     {formatPaymentTime(row.approval_payment_time)}
                                   </dd>
@@ -385,7 +385,7 @@ const AuditRequests = () => {
                                   </dd>
                                 </div>
                                 <div className="sm:col-span-2">
-                                  <dt className="text-emerald-700">Account details</dt>
+                                  <dt className="text-emerald-700">Payment account details</dt>
                                   <dd className="font-medium text-gray-900 whitespace-pre-wrap">
                                     {row.approval_payment_account_details || "—"}
                                   </dd>
