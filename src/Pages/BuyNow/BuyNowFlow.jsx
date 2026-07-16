@@ -994,16 +994,30 @@ const BuyNowFlow = () => {
             };
             loadBundleForOrderSummary();
         } else if (stepParam) {
-            setStep(Number(stepParam));
+            const parsedStep = Number(stepParam);
             const qParam = searchParams.get('q');
             const categoryParam = searchParams.get('category');
-            if (Number(stepParam) === 3.5 && (qParam || categoryParam)) {
-                const resolvedCategory = categoryParam && ['full-kit', 'inverter-battery', 'battery-only'].includes(categoryParam)
-                    ? categoryParam
-                    : (undefined);
+            const validSteps = new Set([1, 2, 2.5, 2.75, 3, 3.5, 3.6, 3.75, 4, 5, 6, 7, 7.5, 8]);
+            const resolvedCategory = categoryParam && ['full-kit', 'inverter-battery', 'battery-only', 'inverter-only', 'panels-only'].includes(categoryParam)
+                ? categoryParam
+                : undefined;
+
+            let nextStep = parsedStep;
+            if (!Number.isFinite(nextStep) || !validSteps.has(nextStep)) {
+                // Defensive fallback for malformed calculator/back links like step=0.
+                nextStep = resolvedCategory
+                    ? (['full-kit', 'inverter-battery'].includes(resolvedCategory) ? 3 : 2)
+                    : 1;
+            }
+
+            setStep(nextStep);
+
+            if (resolvedCategory || qParam) {
                 setFormData(prev => ({
                     ...prev,
-                    optionType: prev.optionType || 'choose-system',
+                    optionType: (nextStep === 3.5 || nextStep === 3.6 || nextStep === 4 || nextStep === 7 || nextStep === 7.5 || nextStep === 8)
+                        ? (prev.optionType || 'choose-system')
+                        : prev.optionType,
                     productCategory: resolvedCategory ?? prev.productCategory ?? 'full-kit',
                     customerType: prev.customerType || 'residential',
                 }));
