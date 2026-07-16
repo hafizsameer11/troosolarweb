@@ -416,6 +416,29 @@ const AuditRequests = () => {
                             </div>
                           </div>
                         )}
+                      {row.customer_has_paid ? (
+                        <div className="sm:col-span-2 mt-2">
+                          <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 space-y-2">
+                            <p className="text-sm font-semibold text-blue-900">
+                              Payment received
+                            </p>
+                            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                              <div>
+                                <dt className="text-blue-700">Payment date</dt>
+                                <dd className="font-medium text-gray-900">
+                                  {formatPaymentDate(row.customer_payment_date)}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-blue-700">Payment time</dt>
+                                <dd className="font-medium text-gray-900">
+                                  {formatPaymentTime(row.customer_payment_time)}
+                                </dd>
+                              </div>
+                            </dl>
+                          </div>
+                        </div>
+                      ) : null}
                       {row.admin_notes ? (
                         <div className="sm:col-span-2">
                           <dt className="text-gray-500">Notes from team</dt>
