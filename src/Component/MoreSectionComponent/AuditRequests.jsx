@@ -343,7 +343,11 @@ const AuditRequests = () => {
                       ) : null}
                       {(row.property_floors != null || row.property_rooms != null) && (
                         <div>
-                          <dt className="text-gray-500">Floors / rooms</dt>
+                          <dt className="text-gray-500">
+                            {row.audit_subtype === "office"
+                              ? "No. of floors / No. of office spaces"
+                              : "No. of floors / No. of rooms"}
+                          </dt>
                           <dd className="font-medium text-gray-900">
                             {row.property_floors ?? "—"} / {row.property_rooms ?? "—"}
                           </dd>
