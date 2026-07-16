@@ -29,6 +29,7 @@ const InverterLoadCalculator = () => {
   const searchParams = new URLSearchParams(location.search);
   const returnTo = searchParams.get("returnTo"); // "buy-now" | "bnpl"
   const source = searchParams.get("source"); // "flow" when opened from BNPL/BuyNow flow
+  const previousStep = searchParams.get("previousStep");
   const category = searchParams.get("category") || ""; // full-kit | inverter-battery | battery-only
   const fromBundles = searchParams.get("fromBundles") === "true";
   // Comprehensive appliance data from the Excel spreadsheet
@@ -415,12 +416,13 @@ const InverterLoadCalculator = () => {
 
   const handleGoBack = () => {
     const categoryParam = category ? `&category=${encodeURIComponent(category)}` : "";
+    const fallbackStep = Number.isFinite(Number(previousStep)) ? Number(previousStep) : 3;
     if (source === "flow" && returnTo === "buy-now") {
-      navigate(`/buy-now?step=3.5&fromCalculator=true${categoryParam}`);
+      navigate(`/buy-now?step=${encodeURIComponent(String(fallbackStep))}${categoryParam}`);
       return;
     }
     if (source === "flow" && returnTo === "bnpl") {
-      navigate(`/bnpl?step=3.5&fromCalculator=true${categoryParam}`);
+      navigate(`/bnpl?step=${encodeURIComponent(String(fallbackStep))}${categoryParam}`);
       return;
     }
     navigate("/tools?tool=inverter");

@@ -3208,7 +3208,7 @@ const BuyNowFlow = () => {
                     </div>
                     <h3 className="text-xl font-bold mb-2 text-gray-800 group-hover:text-[#273e8e] transition-colors">{solutionLabel}</h3>
                 </button>
-                <button onClick={() => navigate(`/tools?inverter=true&returnTo=buy-now&source=flow&category=${encodeURIComponent(formData.productCategory || 'full-kit')}`)} className="group bg-white border-2 border-gray-200 hover:border-[#273e8e] rounded-2xl p-8 hover:shadow-2xl transition-all duration-300 flex flex-col items-center text-center relative overflow-hidden transform hover:-translate-y-1">
+                <button onClick={() => navigate(`/tools?inverter=true&returnTo=buy-now&source=flow&previousStep=3&category=${encodeURIComponent(formData.productCategory || 'full-kit')}`)} className="group bg-white border-2 border-gray-200 hover:border-[#273e8e] rounded-2xl p-8 hover:shadow-2xl transition-all duration-300 flex flex-col items-center text-center relative overflow-hidden transform hover:-translate-y-1">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#273e8e] to-[#E8A91D]"></div>
                     <div className="bg-gradient-to-br from-[#273e8e]/10 to-[#E8A91D]/10 p-6 rounded-full mb-6 group-hover:from-[#273e8e]/20 group-hover:to-[#E8A91D]/20 transition-all duration-300">
                         <Wrench size={40} className="text-[#273e8e] group-hover:scale-110 transition-transform" />
@@ -3277,7 +3277,7 @@ const BuyNowFlow = () => {
                         const q = searchParams.get('q') || '';
                         const qParam = q ? `&q=${encodeURIComponent(q)}` : '';
                         navigate(
-                            `/tools?inverter=true&returnTo=buy-now&source=flow&category=${encodeURIComponent(formData.productCategory || 'full-kit')}${qParam}`
+                            `/tools?inverter=true&returnTo=buy-now&source=flow&previousStep=3&category=${encodeURIComponent(formData.productCategory || 'full-kit')}${qParam}`
                         );
                         return;
                     }
@@ -3299,7 +3299,7 @@ const BuyNowFlow = () => {
                 {searchParams.get('q') && (
                     <p className="text-center mb-8">
                         <a
-                            href={`/tools?inverter=true&returnTo=buy-now&source=flow&category=${encodeURIComponent(formData.productCategory || 'full-kit')}&q=${encodeURIComponent(searchParams.get('q') || '')}`}
+                            href={`/tools?inverter=true&returnTo=buy-now&source=flow&previousStep=3&category=${encodeURIComponent(formData.productCategory || 'full-kit')}&q=${encodeURIComponent(searchParams.get('q') || '')}`}
                             className="text-[#273e8e] underline font-bold text-base"
                         >
                             Edit load
