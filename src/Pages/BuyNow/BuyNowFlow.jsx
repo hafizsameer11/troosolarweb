@@ -1576,7 +1576,7 @@ const BuyNowFlow = () => {
                         : (formData.rooms ? Number(formData.rooms) : null),
                 contact_name: (formData.fullName || '').trim(),
                 contact_phone: (formData.phone || '').trim(),
-                is_gated_estate: isHome ? formData.isGatedEstate : false,
+                is_gated_estate: (isHome || isOffice) ? !!formData.isGatedEstate : false,
             };
 
             if (formData.auditType === 'home-office') {
@@ -1592,7 +1592,7 @@ const BuyNowFlow = () => {
                 auditRequestPayload.building_type = (formData.buildingType || '').trim();
             }
 
-            if (isHome && formData.isGatedEstate) {
+            if ((isHome || isOffice) && formData.isGatedEstate) {
                 auditRequestPayload.estate_name = formData.estateName;
                 auditRequestPayload.estate_address = formData.estateAddress;
             }
@@ -5278,6 +5278,7 @@ const BuyNowFlow = () => {
                 !formData.buildingType?.trim() ||
                 !formData.floors ||
                 !formData.officeSpaces ||
+                (formData.isGatedEstate && (!formData.estateName || !formData.estateAddress)) ||
                 !formData.preferredAuditDate ||
                 !formData.preferredAuditTime;
 
@@ -5509,6 +5510,37 @@ const BuyNowFlow = () => {
                                         />
                                     </div>
                                 </div>
+                                <div className="mt-4">
+                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.isGatedEstate}
+                                            onChange={(e) => setFormData({ ...formData, isGatedEstate: e.target.checked })}
+                                            className="h-5 w-5 text-[#273e8e] focus:ring-[#273e8e] border-gray-300 rounded"
+                                        />
+                                        <span className="text-gray-700">Is this property in a gated estate?</span>
+                                    </label>
+                                </div>
+                                {formData.isGatedEstate && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                        <input
+                                            type="text"
+                                            placeholder="Estate Name *"
+                                            required={formData.isGatedEstate}
+                                            className="p-3 border rounded-lg"
+                                            value={formData.estateName}
+                                            onChange={(e) => setFormData({ ...formData, estateName: e.target.value })}
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Estate Address *"
+                                            required={formData.isGatedEstate}
+                                            className="p-3 border rounded-lg"
+                                            value={formData.estateAddress}
+                                            onChange={(e) => setFormData({ ...formData, estateAddress: e.target.value })}
+                                        />
+                                    </div>
+                                )}
                             </>
                         )}
 
