@@ -9,7 +9,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import API from "../../config/api.config";
+import API, { API_ORIGIN } from "../../config/api.config";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -65,6 +65,16 @@ const labelProductCategory = (value) => {
   if (v === "panels-only") return "Solar panels only";
   if (v === "audit") return "Professional energy audit";
   return String(value).replace(/-/g, " ");
+};
+
+const auditReceiptUrl = (row) => {
+  if (row?.customer_payment_receipt_url && /^https?:\/\//i.test(String(row.customer_payment_receipt_url))) {
+    return String(row.customer_payment_receipt_url);
+  }
+  if (row?.customer_payment_receipt_path) {
+    return `${API_ORIGIN.replace(/\/$/, "")}/${String(row.customer_payment_receipt_path).replace(/^\//, "")}`;
+  }
+  return null;
 };
 
 const statusStyle = (s) => {
@@ -484,6 +494,21 @@ const AuditRequests = () => {
                                   {formatPaymentTime(row.customer_payment_time)}
                                 </dd>
                               </div>
+                              {auditReceiptUrl(row) ? (
+                                <div className="sm:col-span-2">
+                                  <dt className="text-blue-700">Payment receipt</dt>
+                                  <dd className="font-medium text-gray-900">
+                                    <a
+                                      href={auditReceiptUrl(row)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[#273e8e] hover:underline"
+                                    >
+                                      View payment receipt
+                                    </a>
+                                  </dd>
+                                </div>
+                              ) : null}
                             </dl>
                           </div>
                         </div>
