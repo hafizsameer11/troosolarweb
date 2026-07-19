@@ -6,6 +6,7 @@ import axios from 'axios';
 import API from '../config/api.config';
 import { Loader, CheckCircle, XCircle, Clock, AlertCircle, FileText, ChevronLeft, ChevronRight, Filter, ChevronDown, ChevronUp } from 'lucide-react';
 import Loading from '../Component/Loading';
+import { labelProductCategory } from '../Component/ProductCategoryGrid';
 
 const BNPLCreditCheckStatus = () => {
     const navigate = useNavigate();
@@ -407,9 +408,9 @@ const BNPLCreditCheckStatus = () => {
                                                                         </p>
                                                                     </div>
                                                                     <div>
-                                                                        <p className="text-sm text-gray-500 mb-1">Product Category</p>
-                                                                        <p className="font-semibold text-gray-800 capitalize">
-                                                                            {details.product_category || 'N/A'}
+                                                                        <p className="text-sm text-gray-500 mb-1">Solution</p>
+                                                                        <p className="font-semibold text-gray-800">
+                                                                            {labelProductCategory(details.product_category) || 'N/A'}
                                                                         </p>
                                                                     </div>
                                                                     <div>

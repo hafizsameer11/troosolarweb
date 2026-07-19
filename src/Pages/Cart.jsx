@@ -346,7 +346,7 @@ const Cart = () => {
     };
   }, [token]);
 
-  // Custom order email links: /cart?token=…&type=buy_now|bnpl
+  // Custom order email links: /cart?token=…&type=buy_now|bnpl (legacy buy_now → Buy Now flow)
   useEffect(() => {
     const accessToken = searchParams.get("token");
     const orderType = searchParams.get("type");
@@ -377,7 +377,10 @@ const Cart = () => {
         if (payload?.requires_login) {
           localStorage.removeItem("access_token");
           localStorage.removeItem("user");
-          const returnPath = `/cart?token=${encodeURIComponent(accessToken)}&type=${encodeURIComponent(orderType)}`;
+          const returnPath =
+            orderType === "buy_now"
+              ? `/buy-now?token=${encodeURIComponent(accessToken)}&type=buy_now&step=4`
+              : `/cart?token=${encodeURIComponent(accessToken)}&type=${encodeURIComponent(orderType)}`;
           navigate(loginPathWithReturn(returnPath), { replace: true });
           return;
         }
@@ -388,8 +391,11 @@ const Cart = () => {
           );
           return;
         }
-        await loadCart();
-        navigate("/cart", { replace: true });
+        // Buy Now custom orders: continue in Buy Now after product/bundle selection
+        navigate(
+          `/buy-now?token=${encodeURIComponent(accessToken)}&type=buy_now&step=4`,
+          { replace: true }
+        );
       } catch (e) {
         if (!cancelled) {
           setErr(

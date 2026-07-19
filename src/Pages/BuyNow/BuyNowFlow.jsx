@@ -810,7 +810,7 @@ const BuyNowFlow = () => {
         }
     }, [searchParams]);
 
-    // Verify cart access and load cart items
+    // Verify cart access and load cart items (admin custom-order email deep link)
     const verifyCartAccess = async (token, orderType = 'buy_now') => {
         setCartLoading(true);
         setCartError(null);
@@ -828,11 +828,16 @@ const BuyNowFlow = () => {
 
                 persistSessionFromCartAccess(cartData);
 
+                const stepParam = searchParams.get('step');
+                const parsedStep = Number(stepParam || 4);
+                const validSteps = new Set([1, 2, 2.5, 2.75, 3, 3.5, 3.6, 3.75, 4, 5, 6, 7, 7.5, 8]);
+                const landStep = Number.isFinite(parsedStep) && validSteps.has(parsedStep) ? parsedStep : 4;
+                const returnPath = `/buy-now?token=${encodeURIComponent(token)}&type=${encodeURIComponent(orderType)}&step=${landStep}`;
+
                 if (cartData.requires_login) {
                     localStorage.removeItem('access_token');
                     localStorage.removeItem('user');
-                    const returnUrl = `/cart?token=${encodeURIComponent(token)}&type=${encodeURIComponent(orderType)}`;
-                    navigate(loginPathWithReturn(returnUrl));
+                    navigate(loginPathWithReturn(returnPath));
                     return;
                 }
 
@@ -868,18 +873,26 @@ const BuyNowFlow = () => {
                     
                     if (products.length > 0 || bundles.length > 0) {
                         const totalPrice = [...products, ...bundles].reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
+                        const primaryBundle = bundles[0];
                         setFormData(prev => ({
                             ...prev,
                             selectedProducts: products,
                             selectedBundles: bundles,
-                            selectedProductPrice: totalPrice
+                            selectedBundleId: primaryBundle?.id ?? prev.selectedBundleId,
+                            selectedBundle: primaryBundle?.bundle ?? prev.selectedBundle,
+                            selectedProductPrice: totalPrice,
+                            customerType: prev.customerType || 'residential',
+                            optionType: 'choose-system',
+                            productCategory: prev.productCategory || 'full-kit',
+                            installerChoice: prev.installerChoice || 'troosolar',
+                            includeInsurance: prev.includeInsurance || false,
+                            includeInspection: prev.includeInspection !== undefined ? prev.includeInspection : true,
                         }));
+                        // Stay in Buy Now (same path as catalog Buy Now after selection)
+                        if (orderType === 'buy_now') {
+                            setStep(landStep);
+                        }
                     }
-                }
-
-                if (orderType === 'buy_now') {
-                    navigate('/cart', { replace: true });
-                    return;
                 }
             } else {
                 setCartError(response.data.message || 'Failed to access cart');

@@ -48,6 +48,15 @@ export const PRODUCT_CATEGORY_DEFS = {
   },
 };
 
+/** Human-readable solution label for order/audit displays. */
+export function labelProductCategory(value) {
+  const v = String(value || "").toLowerCase().trim();
+  if (!v) return "";
+  if (PRODUCT_CATEGORY_DEFS[v]?.name) return PRODUCT_CATEGORY_DEFS[v].name;
+  if (v === "audit") return "Professional energy audit";
+  return String(value).replace(/-/g, " ");
+}
+
 const ProductCategoryGrid = ({ onSelect }) => {
   const renderCategoryCard = (groupId) => {
     const group = PRODUCT_CATEGORY_DEFS[groupId];
