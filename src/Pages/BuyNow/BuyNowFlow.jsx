@@ -1990,7 +1990,9 @@ const BuyNowFlow = () => {
                 contact_phone: formData.phone?.trim() || undefined,
                 is_gated_estate: !!formData.isGatedEstate,
             };
-            const linkedAuditId = auditRequestId || formData.auditRequestId;
+            const linkedAuditId = cartToken
+                ? (auditRequestId || formData.auditRequestId)
+                : null;
             if (linkedAuditId) {
                 payload.audit_request_id = Number(linkedAuditId);
             }
