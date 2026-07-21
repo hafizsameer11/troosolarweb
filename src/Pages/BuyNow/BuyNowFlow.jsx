@@ -874,7 +874,7 @@ const BuyNowFlow = () => {
                     if (products.length > 0 || bundles.length > 0) {
                         const totalPrice = [...products, ...bundles].reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
                         const primaryBundle = bundles[0];
-                        const audit = cartData.latest_audit_request || null;
+                        const audit = cartData.audit_request || cartData.latest_audit_request || null;
                         const auditCustomerType = String(audit?.customer_type || '').toLowerCase();
                         const resolvedCustomerType = ['residential', 'sme', 'commercial'].includes(auditCustomerType)
                             ? auditCustomerType
