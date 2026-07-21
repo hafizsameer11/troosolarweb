@@ -874,6 +874,18 @@ const BuyNowFlow = () => {
                     if (products.length > 0 || bundles.length > 0) {
                         const totalPrice = [...products, ...bundles].reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
                         const primaryBundle = bundles[0];
+                        const audit = cartData.latest_audit_request || null;
+                        const auditCustomerType = String(audit?.customer_type || '').toLowerCase();
+                        const resolvedCustomerType = ['residential', 'sme', 'commercial'].includes(auditCustomerType)
+                            ? auditCustomerType
+                            : (audit?.audit_type === 'commercial' ? 'commercial' : null);
+                        const auditCategory = String(audit?.product_category || '').toLowerCase();
+                        const validCategories = ['full-kit', 'inverter-battery', 'battery-only', 'inverter-only', 'panels-only'];
+
+                        if (audit?.id) {
+                            setAuditRequestId(audit.id);
+                        }
+
                         setFormData(prev => ({
                             ...prev,
                             selectedProducts: products,
@@ -881,12 +893,25 @@ const BuyNowFlow = () => {
                             selectedBundleId: primaryBundle?.id ?? prev.selectedBundleId,
                             selectedBundle: primaryBundle?.bundle ?? prev.selectedBundle,
                             selectedProductPrice: totalPrice,
-                            customerType: prev.customerType || 'residential',
+                            // Prefer audit request — do not hardcode residential for custom-order links
+                            customerType: resolvedCustomerType || prev.customerType || 'residential',
+                            auditRequestId: audit?.id || prev.auditRequestId,
+                            auditType: audit?.audit_type || prev.auditType,
                             optionType: 'choose-system',
-                            productCategory: prev.productCategory || 'full-kit',
+                            productCategory: (validCategories.includes(auditCategory) ? auditCategory : null)
+                                || prev.productCategory
+                                || 'full-kit',
                             installerChoice: prev.installerChoice || 'troosolar',
                             includeInsurance: prev.includeInsurance || false,
                             includeInspection: prev.includeInspection !== undefined ? prev.includeInspection : true,
+                            state: prev.state || audit?.property_state || '',
+                            floors: prev.floors || (audit?.property_floors != null ? String(audit.property_floors) : ''),
+                            rooms: prev.rooms || (audit?.property_rooms != null ? String(audit.property_rooms) : ''),
+                            isGatedEstate: prev.isGatedEstate || !!audit?.is_gated_estate,
+                            estateName: prev.estateName || audit?.estate_name || '',
+                            estateAddress: prev.estateAddress || audit?.estate_address || '',
+                            fullName: prev.fullName || audit?.contact_name || '',
+                            phone: prev.phone || audit?.contact_phone || '',
                         }));
                         // Stay in Buy Now (same path as catalog Buy Now after selection)
                         if (orderType === 'buy_now') {
@@ -1965,6 +1990,10 @@ const BuyNowFlow = () => {
                 contact_phone: formData.phone?.trim() || undefined,
                 is_gated_estate: !!formData.isGatedEstate,
             };
+            const linkedAuditId = auditRequestId || formData.auditRequestId;
+            if (linkedAuditId) {
+                payload.audit_request_id = Number(linkedAuditId);
+            }
             if (formData.floors) payload.property_floors = Number(formData.floors) || null;
             if (formData.rooms) payload.property_rooms = Number(formData.rooms) || null;
             if (formData.isGatedEstate) {
