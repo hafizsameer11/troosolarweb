@@ -848,7 +848,11 @@ const Cart = () => {
       setServerDeliveryPrice(toNumber(delivery.price));
       setServerInstallPrice(toNumber(installation.price));
       setServerInspectionPrice(
-        toNumber(installation.inspection_price ?? totals.inspection)
+        toNumber(
+          installation.inspection_price ??
+            totals.inspection_preview ??
+            totals.inspection
+        )
       );
       setServerInsurancePrice(
         toNumber(totals.insurance ?? installation.insurance_price)
