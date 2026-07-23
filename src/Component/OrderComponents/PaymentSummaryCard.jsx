@@ -41,7 +41,7 @@ const PaymentSummaryCard = ({
         </div>
     );
 
-    const discountPctLabel = Math.round(Number(outrightDiscountPct) || 10);
+    const discountPctLabel = Math.round(Number(outrightDiscountPct) || 0);
 
     return (
         <div className={`bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm ${className}`}>
@@ -51,7 +51,9 @@ const PaymentSummaryCard = ({
             <div className="px-4 py-2">
                 {amountRow('Sub-Total', subTotalBeforeDiscount)}
                 {effectiveOutrightDiscount > 0 && amountRow(
-                    `Discount (${discountPctLabel}%)`,
+                    discountPctLabel > 0
+                        ? `Discount (${discountPctLabel}%)`
+                        : 'Discount',
                     effectiveOutrightDiscount,
                     { prefix: '-', valueClass: 'text-green-700' }
                 )}

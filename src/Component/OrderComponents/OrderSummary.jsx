@@ -64,6 +64,8 @@ const buildOrderPaymentBreakdown = (rawData) => {
     discount = catalogSubtotal - itemsAfterDiscount;
   }
 
+  // Buy Now only: infer discount from grand total when API fields are incomplete.
+  // Shop cart must not invent discounts — that caused paid vs shown amount mismatches.
   if (
     isBuyNow &&
     discount <= 0 &&
@@ -77,23 +79,16 @@ const buildOrderPaymentBreakdown = (rawData) => {
     }
   }
 
-  if (
-    !isBuyNow &&
-    discount <= 0 &&
-    catalogSubtotal > 0 &&
-    orderTotal > 0
-  ) {
-    const inferredAfter = orderTotal - serviceFeesTotal - vat - insurance;
-    if (inferredAfter > 0 && inferredAfter + 0.005 < catalogSubtotal) {
-      itemsAfterDiscount = inferredAfter;
-      discount = catalogSubtotal - inferredAfter;
-    }
-  }
-
   if (!isBuyNow && vat <= 0 && itemsAfterDiscount > 0 && orderTotal > 0) {
-    const totalAmountBeforeVat = itemsAfterDiscount + serviceFeesTotal;
-    const expectedVat = Math.round(totalAmountBeforeVat * (vatPct / 100) * 100) / 100;
-    if (Math.abs(orderTotal - (totalAmountBeforeVat + expectedVat + insurance)) < 1) {
+    // Shop cart VAT is on discounted items only (not delivery/install fees).
+    const expectedVat =
+      Math.round(itemsAfterDiscount * (vatPct / 100) * 100) / 100;
+    if (
+      Math.abs(
+        orderTotal -
+          (itemsAfterDiscount + serviceFeesTotal + expectedVat + insurance)
+      ) < 1
+    ) {
       vat = expectedVat;
     }
   }
@@ -105,10 +100,6 @@ const buildOrderPaymentBreakdown = (rawData) => {
   const outrightDiscountPct =
     pctRaw != null && String(pctRaw).trim() !== ""
       ? Math.round(Number(pctRaw))
-      : isBuyNow && discount > 0 && catalogSubtotal > 0
-      ? Math.round((discount / catalogSubtotal) * 100)
-      : isBuyNow
-      ? 10
       : discount > 0 && catalogSubtotal > 0
       ? Math.round((discount / catalogSubtotal) * 100)
       : null;

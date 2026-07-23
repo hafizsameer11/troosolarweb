@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { assets } from "../assets/data";
@@ -24,6 +24,7 @@ import {
   fetchBnplMinimumLoanAmount,
   isBnplEligiblePrice,
 } from "../utils/bnplEligibility";
+import { isFromShop } from "../utils/shopSource";
 
 /* ---------------- helpers ---------------- */
 const formatNGN = (n) => {
@@ -265,6 +266,8 @@ const mapApiProductToDetails = (p) => {
 export default function ProductDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isShopMode = isFromShop(searchParams);
   const {
     addToCart,
     removeToCart,
@@ -311,8 +314,10 @@ export default function ProductDetails() {
     };
   }, []);
   const showBnplPromo = useMemo(
-    () => isBnplEligiblePrice(product?.priceAmount, bnplMinimumAmount),
-    [product?.priceAmount, bnplMinimumAmount]
+    () =>
+      !isShopMode &&
+      isBnplEligiblePrice(product?.priceAmount, bnplMinimumAmount),
+    [isShopMode, product?.priceAmount, bnplMinimumAmount]
   );
   const catMap = useMemo(() => {
     const m = {};
@@ -652,25 +657,42 @@ export default function ProductDetails() {
                 </div>
 
                 <div className="mt-6 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  {isShopMode ? (
                     <button
                       onClick={handleAddToCart}
                       disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
-                      className="py-4 border text-[#273E8E] border-[#273e8e] rounded-full hover:bg-[#273e8e]/10 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      className="w-full py-4 bg-[#273e8e] text-white rounded-full text-center hover:bg-[#273e8e]/90 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {addingToCart && (
-                        <div className="w-4 h-4 border-2 border-[#273e8e] border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       )}
-                      {Number(product?.stockQty ?? 0) <= 0 ? "Out of Stock" : addingToCart ? "Adding..." : "Add To Cart"}
+                      {Number(product?.stockQty ?? 0) <= 0
+                        ? "Out of Stock"
+                        : addingToCart
+                          ? "Adding..."
+                          : "Add To Cart"}
                     </button>
-                    <button
-                      onClick={handleBuyNow}
-                      disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
-                      className="py-4 bg-[#273e8e] text-white rounded-full text-center hover:bg-[#273e8e]/90 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      Buy Now
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        onClick={handleAddToCart}
+                        disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
+                        className="py-4 border text-[#273E8E] border-[#273e8e] rounded-full hover:bg-[#273e8e]/10 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {addingToCart && (
+                          <div className="w-4 h-4 border-2 border-[#273e8e] border-t-transparent rounded-full animate-spin"></div>
+                        )}
+                        {Number(product?.stockQty ?? 0) <= 0 ? "Out of Stock" : addingToCart ? "Adding..." : "Add To Cart"}
+                      </button>
+                      <button
+                        onClick={handleBuyNow}
+                        disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
+                        className="py-4 bg-[#273e8e] text-white rounded-full text-center hover:bg-[#273e8e]/90 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Buy Now
+                      </button>
+                    </div>
+                  )}
                   {showBnplPromo && (
                     <div className="p-4 mt-6 bg-[#FFFF0033] rounded-lg">
                       <p className="text-[#F8A91D] text-[14px] pb-5">
@@ -1210,25 +1232,42 @@ export default function ProductDetails() {
 
             {/* Actions */}
             <div className="mt-6 space-y-4 pb-8">
-              <div className="grid grid-cols-2 gap-4">
+              {isShopMode ? (
                 <button
                   onClick={handleAddToCart}
                   disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
-                  className="py-3 border border-[#273e8e] rounded-full hover:bg-[#273e8e]/10 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-[#273e8e] text-white rounded-full text-center hover:bg-[#273e8e]/90 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {addingToCart && (
-                    <div className="w-4 h-4 border-2 border-[#273e8e] border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   )}
-                  {Number(product?.stockQty ?? 0) <= 0 ? "Out of Stock" : addingToCart ? "Adding..." : "Add To Cart"}
+                  {Number(product?.stockQty ?? 0) <= 0
+                    ? "Out of Stock"
+                    : addingToCart
+                      ? "Adding..."
+                      : "Add To Cart"}
                 </button>
-                <button
-                  onClick={handleBuyNow}
-                  disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
-                  className="py-3 bg-[#273e8e] text-white rounded-full text-center hover:bg-[#273e8e]/90 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  Buy Now
-                </button>
-              </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
+                    className="py-3 border border-[#273e8e] rounded-full hover:bg-[#273e8e]/10 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {addingToCart && (
+                      <div className="w-4 h-4 border-2 border-[#273e8e] border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                    {Number(product?.stockQty ?? 0) <= 0 ? "Out of Stock" : addingToCart ? "Adding..." : "Add To Cart"}
+                  </button>
+                  <button
+                    onClick={handleBuyNow}
+                    disabled={addingToCart || Number(product?.stockQty ?? 0) <= 0}
+                    className="py-3 bg-[#273e8e] text-white rounded-full text-center hover:bg-[#273e8e]/90 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Buy Now
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

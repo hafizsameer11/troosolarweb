@@ -230,6 +230,7 @@ const Cart = () => {
   const [serverItemsCount, setServerItemsCount] = useState(null);
   const [serverDeliveryPrice, setServerDeliveryPrice] = useState(0);
   const [serverInstallPrice, setServerInstallPrice] = useState(0);
+  const [serverInspectionPrice, setServerInspectionPrice] = useState(0);
   const [serverInsurancePrice, setServerInsurancePrice] = useState(0);
   const [bnplMinimumAmount, setBnplMinimumAmount] = useState(BNPL_MIN_FALLBACK);
   const [deliveryEstimateLabel, setDeliveryEstimateLabel] = useState(
@@ -239,7 +240,11 @@ const Cart = () => {
   const [serverVatAmount, setServerVatAmount] = useState(0);
   const [serverVatPct, setServerVatPct] = useState(0);
   const [serverInsurancePct, setServerInsurancePct] = useState(0);
-  /** From checkout-summary cart lines when referral outright % applies (direct checkout). */
+  /** Catalog items subtotal before online checkout discount (from checkout-summary). */
+  const [serverCatalogItemsTotal, setServerCatalogItemsTotal] = useState(null);
+  /** From checkout-summary totals when online checkout discount applies. */
+  const [serverOutrightDiscountAmount, setServerOutrightDiscountAmount] =
+    useState(0);
   const [serverReferralOutrightPct, setServerReferralOutrightPct] = useState(0);
   const [installationNotice, setInstallationNotice] = useState("");
   const [type, setType] = useState("product");
@@ -299,18 +304,24 @@ const Cart = () => {
       setLines(mapped);
       // Invalidate server checkout totals — next summary fetch will match new lines.
       setServerItemsTotal(null);
+      setServerCatalogItemsTotal(null);
       setServerItemsCount(null);
       setServerGrandTotal(null);
+      setServerOutrightDiscountAmount(0);
       setServerReferralOutrightPct(0);
+      setServerInspectionPrice(0);
     } catch (e) {
       setErr(
         e?.response?.data?.message || e?.message || "Failed to load cart."
       );
       setLines([]);
       setServerItemsTotal(null);
+      setServerCatalogItemsTotal(null);
       setServerItemsCount(null);
       setServerGrandTotal(null);
+      setServerOutrightDiscountAmount(0);
       setServerReferralOutrightPct(0);
+      setServerInspectionPrice(0);
     } finally {
       setLoading(false);
     }
@@ -722,26 +733,23 @@ const Cart = () => {
     [lines]
   );
 
-  // Prefer server items_total once checkout-summary has been fetched (matches admin VAT/delivery/insurance rules).
-  const itemsTotalToShow =
+  // Prefer server items totals once checkout-summary has been fetched (matches admin VAT/delivery/insurance rules).
+  const itemsCatalogSubtotal =
+    serverCatalogItemsTotal != null &&
+    !Number.isNaN(Number(serverCatalogItemsTotal))
+      ? Number(serverCatalogItemsTotal)
+      : amountTotal;
+  const itemsChargedSubtotal =
     serverItemsTotal != null && !Number.isNaN(Number(serverItemsTotal))
       ? Number(serverItemsTotal)
       : amountTotal;
-  /** Sum of cart line prices (matches product cards). */
-  const itemsCatalogSubtotal = amountTotal;
-  /** Amount used for fees/VAT (after referral discount when direct). */
-  const itemsChargedSubtotal = itemsTotalToShow;
-  let outrightDiscountAmount = 0;
-  if (
-    serverItemsTotal != null &&
-    !Number.isNaN(Number(serverItemsTotal))
-  ) {
-    const cat = Number(amountTotal);
-    const ch = Number(serverItemsTotal);
-    if (ch < cat - 0.5) {
-      outrightDiscountAmount = Math.round((cat - ch) * 100) / 100;
-    }
-  }
+  const itemsTotalToShow = itemsChargedSubtotal;
+  const outrightDiscountAmount =
+    serverOutrightDiscountAmount > 0.5
+      ? Number(serverOutrightDiscountAmount)
+      : itemsCatalogSubtotal > itemsChargedSubtotal + 0.5
+        ? Math.round((itemsCatalogSubtotal - itemsChargedSubtotal) * 100) / 100
+        : 0;
   const showOutrightDiscountRow = outrightDiscountAmount > 0.5;
   const outrightDiscountLabel =
     serverReferralOutrightPct > 0
@@ -749,8 +757,11 @@ const Cart = () => {
       : "Online checkout discount";
 
   const installationToShow = serverInstallPrice || 0;
+  const inspectionToShow = serverInspectionPrice || 0;
   const insuranceToShow = serverInsurancePrice || 0;
   const deliveryToShow = serverDeliveryPrice || 0;
+  const qtyToShow =
+    serverItemsCount != null ? serverItemsCount : itemCount;
   /** Backend includes VAT in grand_total; fallback sums pre-VAT when summary not loaded */
   const grandTotal = useMemo(() => {
     if (
@@ -762,7 +773,9 @@ const Cart = () => {
     const preVat =
       itemsTotalToShow +
       deliveryToShow +
-      (includeInstallation ? installationToShow + insuranceToShow : 0);
+      (includeInstallation
+        ? installationToShow + inspectionToShow + insuranceToShow
+        : 0);
     const vat =
       serverVatAmount != null && !Number.isNaN(Number(serverVatAmount))
         ? Number(serverVatAmount)
@@ -774,6 +787,7 @@ const Cart = () => {
     deliveryToShow,
     includeInstallation,
     installationToShow,
+    inspectionToShow,
     insuranceToShow,
     serverVatAmount,
   ]);
@@ -810,23 +824,35 @@ const Cart = () => {
       const installation = payload.installation || {};
       const totals = payload.totals || {};
 
-      setServerItemsTotal(toNumber(cart.items_total));
+      setServerItemsTotal(
+        toNumber(
+          totals.items_subtotal_after_discount ??
+            cart.items_total ??
+            totals.items_total
+        )
+      );
+      setServerCatalogItemsTotal(
+        toNumber(
+          totals.items_subtotal_before_discount ??
+            cart.items_total ??
+            totals.items_total
+        )
+      );
+      setServerOutrightDiscountAmount(
+        toNumber(totals.outright_discount_amount)
+      );
       setServerItemsCount(toNumber(cart.items_count));
-      {
-        let pct = 0;
-        if (Array.isArray(cart.items)) {
-          const hit = cart.items.find(
-            (i) => toNumber(i.referral_outright_discount_percent) > 0
-          );
-          if (hit) {
-            pct = toNumber(hit.referral_outright_discount_percent);
-          }
-        }
-        setServerReferralOutrightPct(pct);
-      }
+      setServerReferralOutrightPct(
+        toNumber(totals.outright_discount_percentage)
+      );
       setServerDeliveryPrice(toNumber(delivery.price));
       setServerInstallPrice(toNumber(installation.price));
-      setServerInsurancePrice(toNumber(installation.insurance_price));
+      setServerInspectionPrice(
+        toNumber(installation.inspection_price ?? totals.inspection)
+      );
+      setServerInsurancePrice(
+        toNumber(totals.insurance ?? installation.insurance_price)
+      );
       setDeliveryEstimateLabel(
         delivery.estimate_label || "7–10 working days"
       );
@@ -888,9 +914,12 @@ const Cart = () => {
     } catch (e) {
       console.error("Checkout summary failed:", e?.response?.data || e);
       setServerItemsTotal(null);
+      setServerCatalogItemsTotal(null);
       setServerItemsCount(null);
       setServerGrandTotal(null);
+      setServerOutrightDiscountAmount(0);
       setServerReferralOutrightPct(0);
+      setServerInspectionPrice(0);
     } finally {
       setSummaryLoading(false);
     }
@@ -1599,12 +1628,8 @@ const Cart = () => {
                     </>
                   )}
                   <div className="flex justify-between text-[#00000080] text-sm">
-                    <span>Delivery fee</span>
-                    <span className="text-[#273E8E]">
-                      {deliveryToShow
-                        ? `₦${deliveryToShow.toLocaleString()}`
-                        : "Free"}
-                    </span>
+                    <span>Quantity</span>
+                    <span className="text-[#273E8E]">{qtyToShow}</span>
                   </div>
                 </div>
 
@@ -1634,7 +1659,7 @@ const Cart = () => {
                       <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg py-2 px-2">
                         <p className="text-yellow-600">
                           {installationNotice ||
-                            "Optional: include only if you need Troosolar installation. When included, insurance is added to your order."}
+                            "Optional: include only if you need Troosolar installation. Inspection and installation fees apply when selected."}
                         </p>
                       </div>
                       <div className="flex justify-between text-gray-600 text-sm">
@@ -1661,7 +1686,19 @@ const Cart = () => {
                       )}
                       <hr className="border-gray-300" />
                       <div className="flex justify-between text-[#00000080] text-sm">
-                        <span>Installation</span>
+                        <span>Inspection fee</span>
+                        <span
+                          className={`text-[#273E8E] ${
+                            !includeInstallation
+                              ? "line-through opacity-50"
+                              : ""
+                          }`}
+                        >
+                          ₦{inspectionToShow.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[#00000080] text-sm">
+                        <span>Installation fee</span>
                         <span
                           className={`text-[#273E8E] ${
                             !includeInstallation
@@ -1672,20 +1709,6 @@ const Cart = () => {
                           ₦{installationToShow.toLocaleString()}
                         </span>
                       </div>
-                      {includeInstallation && insuranceToShow > 0 && (
-                        <div className="flex justify-between text-[#00000080] text-sm">
-                          <span>
-                            Insurance (
-                            {serverInsurancePct > 0
-                              ? `${Number(serverInsurancePct).toLocaleString()}%`
-                              : "of items + installation"}
-                            )
-                          </span>
-                          <span className="text-[#273E8E]">
-                            ₦{insuranceToShow.toLocaleString()}
-                          </span>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1695,7 +1718,7 @@ const Cart = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-700">Items (Qty)</span>
                     <span className="font-medium text-gray-900">
-                      {serverItemsCount != null ? serverItemsCount : itemCount}
+                      {qtyToShow}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -1723,6 +1746,20 @@ const Cart = () => {
                       </div>
                     </>
                   )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-700">Inspection</span>
+                    <span
+                      className={
+                        includeInstallation
+                          ? "text-[#273e8e] font-medium"
+                          : "text-gray-400"
+                      }
+                    >
+                      {includeInstallation
+                        ? `₦${inspectionToShow.toLocaleString()}`
+                        : "—"}
+                    </span>
+                  </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-700">Installation</span>
                     <span
@@ -1755,7 +1792,7 @@ const Cart = () => {
                           {Number.isFinite(Number(serverInsurancePct))
                             ? `${Number(serverInsurancePct)}%`
                             : "—"}{" "}
-                          of items + installation)
+                          of items subtotal)
                         </>
                       ) : (
                         <span className="text-gray-500">
@@ -2294,11 +2331,9 @@ const Cart = () => {
                     </>
                   )}
                   <div className="flex justify-between items-center py-3 border-t border-gray-200 text-xs">
-                    <span className="text-gray-500">Delivery fee</span>
+                    <span className="text-gray-500">Quantity</span>
                     <span className="text-[#273e8e] font-semibold">
-                      {deliveryToShow
-                        ? `₦${deliveryToShow.toLocaleString()}`
-                        : "Free"}
+                      {qtyToShow}
                     </span>
                   </div>
                 </div>
@@ -2317,12 +2352,12 @@ const Cart = () => {
                       className="h-4 w-4 rounded accent-[#273e8e] cursor-pointer"
                     />
                     <span className="text-sm font-medium text-gray-700">
-                      Include installation &amp; insurance
+                      Include installation
                     </span>
                   </div>
                   <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-3 text-[12px] text-yellow-700">
                     {installationNotice ||
-                      "Optional: tick only if you want Troosolar installation. Insurance applies when installation is included."}
+                      "Optional: tick only if you want Troosolar installation. Inspection and installation fees apply when selected."}
                   </div>
                   <div className="flex justify-between text-gray-600 text-sm">
                     <span>Estimated window</span>
@@ -2347,7 +2382,17 @@ const Cart = () => {
                     </div>
                   )}
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#00000080]">Installation</span>
+                    <span className="text-[#00000080]">Inspection fee</span>
+                    <span
+                      className={`text-[#273e8e] ${
+                        !includeInstallation ? "line-through opacity-50" : ""
+                      }`}
+                    >
+                      ₦{inspectionToShow.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#00000080]">Installation fee</span>
                     <span
                       className={`text-[#273e8e] ${
                         !includeInstallation ? "line-through opacity-50" : ""
@@ -2356,20 +2401,6 @@ const Cart = () => {
                       ₦{installationToShow.toLocaleString()}
                     </span>
                   </div>
-                  {includeInstallation && insuranceToShow > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#00000080]">
-                        Insurance (
-                        {serverInsurancePct > 0
-                          ? `${Number(serverInsurancePct).toLocaleString()}%`
-                          : ""}
-                        )
-                      </span>
-                      <span className="text-[#273e8e]">
-                        ₦{insuranceToShow.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 {/* Flutterwave only — same as desktop (no payment-method tabs) */}
@@ -2501,12 +2532,8 @@ const Cart = () => {
                     </>
                   )}
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#00000080]">Delivery fee</span>
-                    <span className="text-[#273e8e]">
-                      {deliveryToShow
-                        ? `₦${deliveryToShow.toLocaleString()}`
-                        : "Free"}
-                    </span>
+                    <span className="text-[#00000080]">Quantity</span>
+                    <span className="text-[#273e8e]">{qtyToShow}</span>
                   </div>
                 </div>
 
@@ -2522,12 +2549,12 @@ const Cart = () => {
                       className="h-4 w-4 rounded accent-[#273e8e] cursor-pointer"
                     />
                     <span className="text-xs font-medium text-gray-700">
-                      Include installation &amp; insurance
+                      Include installation
                     </span>
                   </div>
                   <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-3 text-[12px] text-yellow-700">
                     {installationNotice ||
-                      "Optional: include only if you need Troosolar installation. Insurance applies when installation is included."}
+                      "Optional: include only if you need Troosolar installation. Inspection and installation fees apply when selected."}
                   </div>
                   <div className="flex justify-between text-xs">
                     <span>Estimated window</span>
@@ -2552,7 +2579,17 @@ const Cart = () => {
                     </div>
                   )}
                   <div className="flex justify-between text-xs">
-                    <span className="text-[#00000080]">Installation</span>
+                    <span className="text-[#00000080]">Inspection fee</span>
+                    <span
+                      className={`text-[#273e8e] ${
+                        !includeInstallation ? "line-through opacity-50" : ""
+                      }`}
+                    >
+                      ₦{inspectionToShow.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#00000080]">Installation fee</span>
                     <span
                       className={`text-[#273e8e] ${
                         !includeInstallation ? "line-through opacity-50" : ""
@@ -2561,20 +2598,44 @@ const Cart = () => {
                       ₦{installationToShow.toLocaleString()}
                     </span>
                   </div>
-                  {includeInstallation && insuranceToShow > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[#00000080]">
-                        Insurance (
-                        {serverInsurancePct > 0
-                          ? `${Number(serverInsurancePct).toLocaleString()}%`
-                          : ""}
-                        )
-                      </span>
-                      <span className="text-[#273e8e]">
-                        ₦{insuranceToShow.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
+                </div>
+
+                <SectionHeading>Payment summary</SectionHeading>
+                <div className="bg-white border border-gray-400 rounded-2xl p-4 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Delivery</span>
+                    <span className="text-[#273e8e] font-medium">
+                      {deliveryToShow
+                        ? `₦${deliveryToShow.toLocaleString()}`
+                        : "Free"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">
+                      Insurance
+                      {includeInstallation && serverInsurancePct > 0
+                        ? ` (${Number(serverInsurancePct)}% of items)`
+                        : ""}
+                    </span>
+                    <span className="text-[#273e8e] font-medium">
+                      ₦
+                      {(includeInstallation
+                        ? insuranceToShow
+                        : 0
+                      ).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">
+                      VAT
+                      {serverVatPct > 0
+                        ? ` (${Number(serverVatPct).toLocaleString()}%)`
+                        : ""}
+                    </span>
+                    <span className="text-[#273e8e] font-medium">
+                      ₦{Number(serverVatAmount || 0).toLocaleString()}
+                    </span>
+                  </div>
                 </div>
 
                 <SectionHeading>Payment</SectionHeading>

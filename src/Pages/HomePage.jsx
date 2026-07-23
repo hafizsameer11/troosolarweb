@@ -5,7 +5,7 @@ import SearchBar from "../Component/SearchBar";
 import Items from "../Component/Items";
 import Product from "../Component/Product";
 import SolarBundleComponent from "../Component/SolarBundleComponent";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { ContextApi } from "../Context/AppContext";
 import TopNavbar from "../Component/TopNavbar";
 import HrLine from "../Component/MobileSectionResponsive/HrLine";
@@ -19,6 +19,7 @@ import {
   resolveBundleInverterRatingDisplay,
 } from "../utils/bundleSort";
 import { getBundleStoreCategoryLabel, normalizeBrandFilterSelection, catalogItemMatchesBrandFilter } from "../utils/storeCatalog";
+import { withShopSource } from "../utils/shopSource";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
 
@@ -230,14 +231,18 @@ const renderCatalogCard = (item, className = "w-full") => {
 };
 
 const getCatalogItemLink = (item) =>
-  item.itemType === "bundle"
-    ? `/productBundle/details/${item.itemableId}`
-    : `/homePage/product/${item.itemableId ?? item.id}`;
+  withShopSource(
+    item.itemType === "bundle"
+      ? `/productBundle/details/${item.itemableId}`
+      : `/homePage/product/${item.itemableId ?? item.id}`
+  );
 
 const HomePage = () => {
   const { registerProducts, filteredResults, setFilteredResults } =
     useContext(ContextApi);
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const fromCart = searchParams.get("from") === "cart";
 
   const [categories, setCategories] = useState([]);
@@ -258,6 +263,7 @@ const HomePage = () => {
   const [isFiltering, setIsFiltering] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [searchBarKey, setSearchBarKey] = useState(0); // Key to force SearchBar re-render
+  const [filtersKey, setFiltersKey] = useState(0); // Remount price/brand filter UI
   const [selectedSize, setSelectedSize] = useState(null);
   const [priceRange, setPriceRange] = useState({ min: null, max: null });
   const [selectedBrandId, setSelectedBrandId] = useState(null);
@@ -266,6 +272,27 @@ const HomePage = () => {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(12); // 12 items per page
+
+  const resetShopFilters = useCallback(() => {
+    setSelectedCategoryId("all");
+    setIsFiltering(false);
+    setSelectedSize(null);
+    setPriceRange({ min: null, max: null });
+    setSelectedBrandId(null);
+    setCurrentPage(1);
+    setSearchBarKey((k) => k + 1);
+    setFiltersKey((k) => k + 1);
+    setFilteredResults(
+      sortStoreCatalogItems([...(apiProducts || []), ...(apiBundles || [])])
+    );
+  }, [apiProducts, apiBundles, setFilteredResults]);
+
+  // Sidebar / mobile Store re-click: clear filters and show All
+  useEffect(() => {
+    if (!location.state?.resetShop) return;
+    resetShopFilters();
+    navigate("/homePage", { replace: true, state: {} });
+  }, [location.state?.resetShop, resetShopFilters, navigate]);
 
   // Memoize the filtering change callback to prevent infinite loops
   const handleFilteringChange = useCallback((isActive) => {
@@ -674,9 +701,10 @@ const HomePage = () => {
           <div className="px-6 py-6 w-full overflow-x-hidden">
             {/* Filters - relative z-[100] so dropdown panels paint above "All Products" and grid */}
             <div className="relative z-[100] flex justify-start items-center gap-4 mb-4">
-              <PriceDropDown onFilter={handlePriceFilter} />
+              <PriceDropDown key={`price-${filtersKey}`} onFilter={handlePriceFilter} />
               <div className="w-full max-w-[200px]">
                 <select
+                  key={`brand-${filtersKey}`}
                   value={selectedBrandId ?? ""}
                   onChange={(e) => handleBrandFilter(e.target.value)}
                   className="w-full px-4 py-4 bg-white border border-black/50 rounded-2xl shadow-sm hover:border-black/70 transition-colors text-sm lg:text-lg text-gray-500"
@@ -914,9 +942,10 @@ const HomePage = () => {
           <div className="px-5 py-6 w-full">
             {/* Filters - relative z-[100] so dropdown panels paint above content below */}
             <div className="relative z-[100] flex justify-start items-center gap-2 mb-4 flex-wrap">
-              <PriceDropDown onFilter={handlePriceFilter} />
+              <PriceDropDown key={`price-m-${filtersKey}`} onFilter={handlePriceFilter} />
               <div className="w-full max-w-[180px]">
                 <select
+                  key={`brand-m-${filtersKey}`}
                   value={selectedBrandId ?? ""}
                   onChange={(e) => handleBrandFilter(e.target.value)}
                   className="w-full px-3 py-3 bg-white border border-black/50 rounded-2xl shadow-sm hover:border-black/70 transition-colors text-sm text-gray-500"

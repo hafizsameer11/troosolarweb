@@ -5,6 +5,7 @@ import { ContextApi } from "../Context/AppContext";
 import { assets } from "../assets/data";
 import API from "../config/api.config";
 import ProductPromoBadges from "./ProductPromoBadges";
+import { withShopSource } from "../utils/shopSource";
 
 // clamp helper
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -284,7 +285,7 @@ const Product = ({
       {/* Actions: pinned to bottom on mobile */}
       <div className="grid grid-cols-2 gap-3 mt-3">
         <Link
-          to={`/homePage/product/${id}`}
+          to={withShopSource(`/homePage/product/${id}`)}
           className="h-10 border border-[#000000] text-[12px] max-sm:text-[8px] rounded-full max-sm:rounded-2xl text-[#181919] max-sm:h-7 flex items-center justify-center hover:bg-gray-50"
         >
           Learn More

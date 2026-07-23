@@ -5,6 +5,7 @@ import { ContextApi } from "../Context/AppContext";
 import API from "../config/api.config";
 import { loginPathWithReturn } from "../utils/authRedirect";
 import ProductPromoBadges from "./ProductPromoBadges";
+import { withShopSource } from "../utils/shopSource";
 
 const SolarBundleComponent = ({
   id,
@@ -53,7 +54,11 @@ const SolarBundleComponent = ({
   const handleCardClick = (e) => {
     if (!e.target.closest("a") && !e.target.closest("button")) {
       if (id) {
-        navigate(`/productBundle/details/${id}${location.search || ""}`);
+        const flow = new URLSearchParams(location.search || "").get("flow");
+        const detailPath = flow
+          ? `/productBundle/details/${id}${location.search || ""}`
+          : withShopSource(`/productBundle/details/${id}${location.search || ""}`);
+        navigate(detailPath);
       }
     }
   };
@@ -102,7 +107,11 @@ const SolarBundleComponent = ({
     }
   };
 
-  const detailLink = `/productBundle/details/${id}${location.search || ""}`;
+  const detailLink = (() => {
+    const flow = new URLSearchParams(location.search || "").get("flow");
+    const path = `/productBundle/details/${id}${location.search || ""}`;
+    return flow ? path : withShopSource(path);
+  })();
   const inverterRatingText = (() => {
     if (inverterRating == null || inverterRating === "") return "";
     const raw = String(inverterRating).trim();

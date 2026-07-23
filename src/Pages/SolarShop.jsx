@@ -9,6 +9,7 @@ import { ShoppingCart, ArrowLeft } from "lucide-react";
 import API from "../config/api.config";
 import { assets } from "../assets/data";
 import { apiFlagTrue } from "../utils/apiFlags";
+import { withShopSource } from "../utils/shopSource";
 
 // ₦ formatter
 const formatNGN = (n) => {
@@ -258,7 +259,7 @@ const SolarShop = () => {
                         <h2 className="text-2xl font-bold text-gray-800 mb-6">Most Popular</h2>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                             {mostPopular.map((item) => (
-                                <Link key={item.id} to={`/homePage/product/${item.id}`}>
+                                <Link key={item.id} to={withShopSource(`/homePage/product/${item.id}`)}>
                                     <Product {...item} />
                                 </Link>
                             ))}
@@ -278,7 +279,7 @@ const SolarShop = () => {
                     {gridProducts.length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                             {gridProducts.map((item) => (
-                                <Link key={item.id} to={`/homePage/product/${item.id}`}>
+                                <Link key={item.id} to={withShopSource(`/homePage/product/${item.id}`)}>
                                     <Product {...item} />
                                 </Link>
                             ))}

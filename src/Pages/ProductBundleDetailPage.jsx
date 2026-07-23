@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 
@@ -9,6 +9,7 @@ import API, { BASE_URL } from "../config/api.config";
 import { ChevronLeft, ShoppingCart } from "lucide-react"; // ← chevron back
 import Loading from "../Component/Loading";
 import ProductPromoBadges from "../Component/ProductPromoBadges";
+import { ContextApi } from "../Context/AppContext";
 import {
   BNPL_BUTTON_LABEL,
   BNPL_MIN_FALLBACK,
@@ -16,6 +17,8 @@ import {
   fetchBnplMinimumLoanAmount,
   isBnplEligiblePrice,
 } from "../utils/bnplEligibility";
+import { isFromShop } from "../utils/shopSource";
+import { loginPathWithReturn } from "../utils/authRedirect";
 
 // Turn BASE_URL (http://localhost:8000/api) into origin (http://localhost:8000)
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
@@ -347,13 +350,19 @@ const ProductBundle = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { fetchCartCount, showCartNotificationModal } = useContext(ContextApi);
   const searchParams = new URLSearchParams(location.search);
   const flowType = searchParams.get("flow"); // 'buy_now' or 'bnpl'
   const cartToken = searchParams.get("token");
+  // Solar Shop / store: Add to Cart only. Keep Buy Now / BNPL for explicit flows & custom-order tokens.
+  const isShopMode =
+    isFromShop(searchParams) ||
+    (!cartToken && flowType !== "buy_now" && flowType !== "bnpl");
 
   const [productData, setProductData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [addingToCart, setAddingToCart] = useState(false);
   const [bundleDetailTab, setBundleDetailTab] = useState("description"); // 'description' | 'specs'
   const [bnplMinimumAmount, setBnplMinimumAmount] = useState(BNPL_MIN_FALLBACK);
   const recommendedLoadQ = searchParams.get("q");
@@ -425,7 +434,7 @@ const ProductBundle = () => {
   );
 
   const renderBnplPromoBox = () => {
-    if (!showBnplOption) return null;
+    if (isShopMode || !showBnplOption) return null;
     return (
       <div className="p-4 mt-3 bg-[#FFFF0033] rounded-lg">
         <p className="text-[#F8A91D] text-[14px] leading-relaxed">
@@ -435,7 +444,69 @@ const ProductBundle = () => {
     );
   };
 
+  const handleAddToCart = async () => {
+    if (!id || addingToCart) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      navigate(loginPathWithReturn());
+      return;
+    }
+
+    setAddingToCart(true);
+    try {
+      await axios.post(
+        API.CART,
+        { itemable_type: "bundle", itemable_id: Number(id), quantity: 1 },
+        {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      fetchCartCount?.();
+      showCartNotificationModal?.(
+        productData?.heading || productData?.bundleTitle || "Bundle",
+        productData?.image
+      );
+    } catch (e) {
+      if (e?.response?.status === 409) {
+        fetchCartCount?.();
+        showCartNotificationModal?.(
+          productData?.heading || productData?.bundleTitle || "Bundle",
+          productData?.image
+        );
+        return;
+      }
+      if (e?.response?.status === 401) {
+        navigate(loginPathWithReturn());
+        return;
+      }
+      alert(
+        e?.response?.data?.message || e?.message || "Failed to add to cart."
+      );
+    } finally {
+      setAddingToCart(false);
+    }
+  };
+
   const renderPurchaseButtons = (compact = false) => {
+    if (isShopMode) {
+      const shopClass = compact
+        ? "w-full h-11 rounded-full bg-[#273E8E] text-white text-[11px] lg:text-[14px] hover:bg-[#1a2b6b] transition-colors disabled:opacity-60"
+        : "w-full text-sm bg-[#273E8E] text-white py-4 rounded-full hover:bg-[#1a2b6b] transition-colors disabled:opacity-60";
+      return (
+        <button
+          type="button"
+          onClick={handleAddToCart}
+          disabled={addingToCart}
+          className={shopClass}
+        >
+          {addingToCart ? "Adding..." : "Add To Cart"}
+        </button>
+      );
+    }
+
     const rowClass = showBnplOption
       ? compact
         ? "grid grid-cols-2 gap-2"

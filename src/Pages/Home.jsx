@@ -16,6 +16,7 @@ import API, { BASE_URL } from "../config/api.config";
 import Loading from "../Component/Loading";
 import { getSiteBanners } from "../utils/siteBanners";
 import { apiFlagTrue } from "../utils/apiFlags";
+import { withShopSource } from "../utils/shopSource";
 
 /* ---------------- helpers ---------------- */
 
@@ -399,7 +400,7 @@ const Home = () => {
       items.push({
         ...bundle,
         type: 'bundle',
-        link: `/productBundle/details/${bundle.id}`
+        link: withShopSource(`/productBundle/details/${bundle.id}`)
       });
     });
     
@@ -408,7 +409,7 @@ const Home = () => {
       items.push({
         ...product,
         type: 'product',
-        link: `/homePage/product/${product.id}`
+        link: withShopSource(`/homePage/product/${product.id}`)
       });
     });
     

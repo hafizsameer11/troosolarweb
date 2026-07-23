@@ -428,7 +428,7 @@ export const sortMappedProductCards = (cards, { priceFirst = false } = {}) => {
 
 /**
  * Solar Store grid: bundle categories → bundle sort only;
- * product categories → product sort; All → sorted bundles then sorted products.
+ * product categories → product sort; All → products and bundles interleaved.
  */
 export const sortStoreCatalogItems = (items, { categoryLabel = "" } = {}) => {
   if (!Array.isArray(items) || items.length === 0) return [];
@@ -452,5 +452,16 @@ export const sortStoreCatalogItems = (items, { categoryLabel = "" } = {}) => {
     return sortedProducts;
   }
 
-  return [...sortedBundles, ...sortedProducts];
+  if (bundles.length > 0 && products.length === 0) {
+    return sortedBundles;
+  }
+
+  // Mix products and bundles so "All" is not bundle-only on page 1.
+  const mixed = [];
+  const maxLen = Math.max(sortedProducts.length, sortedBundles.length);
+  for (let i = 0; i < maxLen; i += 1) {
+    if (i < sortedProducts.length) mixed.push(sortedProducts[i]);
+    if (i < sortedBundles.length) mixed.push(sortedBundles[i]);
+  }
+  return mixed;
 };

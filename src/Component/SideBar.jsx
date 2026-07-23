@@ -171,7 +171,20 @@ const SideBar = () => {
                   key={index}
                   to={item.link}
                   className="flex flex-col items-center justify-center py-2 px-3 min-w-[58px] flex-none"
-                  onClick={() => setActiveLink(item.link)}
+                  onClick={(e) => {
+                    setActiveLink(item.link);
+                    if (
+                      item.link === "/homePage" &&
+                      (location.pathname === "/homePage" ||
+                        location.pathname.startsWith("/homePage/"))
+                    ) {
+                      e.preventDefault();
+                      navigate("/homePage", {
+                        replace: true,
+                        state: { resetShop: Date.now() },
+                      });
+                    }
+                  }}
                 >
                   <div className="flex flex-col items-center">
                     <img

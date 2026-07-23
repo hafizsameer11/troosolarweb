@@ -22,6 +22,7 @@ import {
   sortMappedProductCards,
 } from "../utils/bundleSort";
 import { isProductPriceSortCategory, isSolarInverterBatteryBundle, isInverterBatteryBundle } from "../utils/storeCatalog";
+import { withShopSource } from "../utils/shopSource";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
 
@@ -504,7 +505,7 @@ const SpecificProduct = () => {
                     />
                   ))
                 : specificProduct.map((item) => (
-                    <Link key={item.id} to={`/homePage/product/${item.id}`}>
+                    <Link key={item.id} to={withShopSource(`/homePage/product/${item.id}`)}>
                       <Product
                         id={item.id}
                         image={item.image}
@@ -633,7 +634,7 @@ const SpecificProduct = () => {
                     />
                   ))
                 : specificProduct.map((item) => (
-                    <Link key={item.id} to={`/homePage/product/${item.id}`}>
+                    <Link key={item.id} to={withShopSource(`/homePage/product/${item.id}`)}>
                       <Product
                         id={item.id}
                         image={item.image}

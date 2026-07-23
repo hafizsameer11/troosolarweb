@@ -3,6 +3,7 @@ import { Minus, Plus, Search } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import SideBar from "../Component/SideBar";
 import TopNavbar from "../Component/TopNavbar";
+import { withShopSource } from "../utils/shopSource";
 
 const SolarBuilder = () => {
   const navigate = useNavigate();
@@ -17,7 +18,7 @@ const SolarBuilder = () => {
   const handleGoBack = () => {
     if (bundleId) {
       // If coming from a bundle detail page, go back to that bundle
-      navigate(`/productBundle/details/${bundleId}`);
+      navigate(withShopSource(`/productBundle/details/${bundleId}`));
     } else if (fromBundles || recommend) {
       // If coming from bundles or recommendations, go back to solar bundles
       navigate("/solar-bundles");

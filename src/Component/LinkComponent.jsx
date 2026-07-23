@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 const LinkComp = ({
   name,
@@ -11,6 +11,7 @@ const LinkComp = ({
   menuStatus,
 }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isActive, setIsActive] = useState(isActiveCheck);
 
   useEffect(() => {
@@ -29,12 +30,28 @@ const LinkComp = ({
     setIsActive(isActiveNow);
   }, [location.pathname, link, sub]);
 
+  const handleClick = (e) => {
+    onClick?.(e);
+    // Re-clicking Solar Store while already on the shop should clear filters.
+    if (
+      link === "/homePage" &&
+      (location.pathname === "/homePage" ||
+        location.pathname.startsWith("/homePage/"))
+    ) {
+      e.preventDefault();
+      navigate("/homePage", {
+        replace: true,
+        state: { resetShop: Date.now() },
+      });
+    }
+  };
+
   return (
     <div className="relative">
       {/* Sidebar Link */}
       <Link
         to={link}
-        onClick={onClick}
+        onClick={handleClick}
         className={`group flex items-center py-3 rounded-md transition-all duration-200 mx-4 relative ${
           isActive
             ? "bg-white text-[#273E8E]"
