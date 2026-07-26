@@ -12,6 +12,7 @@ import { ContextApi } from "../Context/AppContext";
 import { loginPathWithReturn } from "../utils/authRedirect";
 import { persistSessionFromCartAccess } from "../utils/cartAccessAuth";
 import {
+  BNPL_BUTTON_LABEL,
   BNPL_MIN_FALLBACK,
   BNPL_PROMO_COPY,
   fetchBnplMinimumLoanAmount,
@@ -1125,8 +1126,8 @@ const Cart = () => {
     }
   };
 
-  /** BNPL: full flow lives under /bnpl — open invoice (6.75) then loan calculator. */
-  const handleBuyByLoan = () => {
+  /** Open BNPL flow from cart (invoice step 6.75 → loan calculator). */
+  const handleBuyNowPayLater = () => {
     if (!token) {
       alert("Please log in first.");
       navigate(
@@ -1137,7 +1138,7 @@ const Cart = () => {
     const total = Number(grandTotal) || 0;
     if (total < bnplMinimumAmount) {
       alert(
-        `Buy Now, Pay Later is only available for orders from ₦${bnplMinimumAmount.toLocaleString()}. Your cart total is ₦${total.toLocaleString()}. Add more items or proceed to checkout.`
+        `${BNPL_BUTTON_LABEL} is only available for orders from ₦${bnplMinimumAmount.toLocaleString()}. Your cart total is ₦${total.toLocaleString()}. Add more items or proceed to checkout.`
       );
       return;
     }
@@ -1872,11 +1873,11 @@ const Cart = () => {
                   {showBnplButton && (
                     <button
                       type="button"
-                      onClick={handleBuyByLoan}
+                      onClick={handleBuyNowPayLater}
                       className="py-3 border border-gray-300 rounded-full text-sm hover:bg-gray-100 transition disabled:opacity-60"
                       disabled={summaryLoading || processingPayment}
                     >
-                      Buy By Loan
+                      {BNPL_BUTTON_LABEL}
                     </button>
                   )}
 
@@ -2104,10 +2105,10 @@ const Cart = () => {
                       <div>{BNPL_PROMO_COPY}</div>
                       <button
                         type="button"
-                        onClick={handleBuyByLoan}
+                        onClick={handleBuyNowPayLater}
                         className="mt-3 inline-flex text-white rounded-full border border-yellow-400 bg-[#E8A91D] px-4 py-2 text-[12px]"
                       >
-                        Apply
+                        {BNPL_BUTTON_LABEL}
                       </button>
                     </div>
                   )}
