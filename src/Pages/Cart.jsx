@@ -256,8 +256,9 @@ const Cart = () => {
   const [orderData, setOrderData] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
 
-  // Add installation toggle state
+  // Add installation / insurance toggle state (independent of each other)
   const [includeInstallation, setIncludeInstallation] = useState(false);
+  const [includeInsurance, setIncludeInsurance] = useState(false);
   const [serverInstallEstimatedDate, setServerInstallEstimatedDate] = useState("");
   /** YYYY-MM-DD when user opts in to Troosolar installation (sent on payment confirm). */
   const [installationRequestedDate, setInstallationRequestedDate] = useState("");
@@ -774,9 +775,8 @@ const Cart = () => {
     const preVat =
       itemsTotalToShow +
       deliveryToShow +
-      (includeInstallation
-        ? installationToShow + inspectionToShow + insuranceToShow
-        : 0);
+      (includeInstallation ? installationToShow + inspectionToShow : 0) +
+      (includeInsurance ? insuranceToShow : 0);
     const vat =
       serverVatAmount != null && !Number.isNaN(Number(serverVatAmount))
         ? Number(serverVatAmount)
@@ -787,6 +787,7 @@ const Cart = () => {
     itemsTotalToShow,
     deliveryToShow,
     includeInstallation,
+    includeInsurance,
     installationToShow,
     inspectionToShow,
     insuranceToShow,
@@ -798,17 +799,22 @@ const Cart = () => {
   // ─────────────────────────────
   // Checkout summary
   // ─────────────────────────────
-  const fetchCheckoutSummary = async (includeInstallOverride) => {
+  const fetchCheckoutSummary = async (overrides = {}) => {
     if (!token) return;
-    const includeFlag =
-      typeof includeInstallOverride === "boolean"
-        ? includeInstallOverride
+    const includeInstallFlag =
+      typeof overrides.includeInstallation === "boolean"
+        ? overrides.includeInstallation
         : includeInstallation;
+    const includeInsuranceFlag =
+      typeof overrides.includeInsurance === "boolean"
+        ? overrides.includeInsurance
+        : includeInsurance;
     setSummaryLoading(true);
     try {
       const res = await axios.get(CHECKOUT_SUMMARY_URL, {
         params: {
-          include_installation: includeFlag ? 1 : 0,
+          include_installation: includeInstallFlag ? 1 : 0,
+          include_insurance: includeInsuranceFlag ? 1 : 0,
           payment_method: CART_PAYMENT_METHOD,
         },
         headers: {
@@ -856,7 +862,11 @@ const Cart = () => {
         )
       );
       setServerInsurancePrice(
-        toNumber(totals.insurance ?? installation.insurance_price)
+        toNumber(
+          totals.insurance_preview ??
+            installation.insurance_price ??
+            totals.insurance
+        )
       );
       setDeliveryEstimateLabel(
         delivery.estimate_label || "7–10 working days"
@@ -948,6 +958,7 @@ const Cart = () => {
     checkout,
     mobileStep,
     includeInstallation,
+    includeInsurance,
     token,
   ]);
 
@@ -974,6 +985,7 @@ const Cart = () => {
       };
     }),
     include_installation: includeInstallation,
+    include_insurance: includeInsurance,
     ...(includeInstallation && installationRequestedDate
       ? { installation_requested_date: installationRequestedDate }
       : {}),
@@ -1718,6 +1730,55 @@ const Cart = () => {
                   </div>
                 </div>
 
+                <div>
+                  <h1 className="text-xl py-3 font-semibold text-gray-600">
+                    Insurance
+                  </h1>
+                  <div className="flex items-start gap-3">
+                    <div>
+                      <input
+                        type="checkbox"
+                        checked={includeInsurance}
+                        onChange={(e) => {
+                          setIncludeInsurance(e.target.checked);
+                        }}
+                        className="h-3 w-3 rounded accent-[#273e8e] cursor-pointer"
+                      />
+                    </div>
+                    <div
+                      className={`w-full border-[1px] rounded-xl p-4 space-y-3 ${
+                        includeInsurance
+                          ? "bg-white border-gray-300"
+                          : "bg-gray-100 border-gray-400"
+                      }`}
+                    >
+                      <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg py-2 px-2">
+                        <p className="text-yellow-600">
+                          Optional: add product insurance separately from
+                          installation. Fee is a percentage of items subtotal.
+                        </p>
+                      </div>
+                      <div className="flex justify-between text-[#00000080] text-sm">
+                        <span>
+                          Insurance
+                          {serverInsurancePct > 0
+                            ? ` (${Number(serverInsurancePct)}% of items)`
+                            : ""}
+                        </span>
+                        <span
+                          className={`text-[#273E8E] ${
+                            !includeInsurance
+                              ? "line-through opacity-50"
+                              : ""
+                          }`}
+                        >
+                          ₦{insuranceToShow.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Order totals — line order: items → installation → delivery → insurance → VAT → total */}
                 <div className="border-[1px] border-gray-300 p-4 rounded-xl space-y-3 bg-white">
                   <div className="flex justify-between text-sm">
@@ -1790,7 +1851,7 @@ const Cart = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-700 text-right max-w-[70%] leading-snug">
                       Insurance
-                      {includeInstallation ? (
+                      {includeInsurance ? (
                         <>
                           {" "}
                           (
@@ -1802,19 +1863,19 @@ const Cart = () => {
                       ) : (
                         <span className="text-gray-500">
                           {" "}
-                          (when installation is included)
+                          (optional — tick to include)
                         </span>
                       )}
                     </span>
                     <span
                       className={
-                        includeInstallation && insuranceToShow > 0
+                        includeInsurance && insuranceToShow > 0
                           ? "text-[#273e8e] font-medium"
                           : "text-gray-500"
                       }
                     >
                       ₦
-                      {(includeInstallation ? insuranceToShow : 0).toLocaleString()}
+                      {(includeInsurance ? insuranceToShow : 0).toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -2408,6 +2469,42 @@ const Cart = () => {
                   </div>
                 </div>
 
+                <SectionHeading>Insurance</SectionHeading>
+                <div className="bg-white border border-gray-400 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center gap-3 mb-3">
+                    <input
+                      type="checkbox"
+                      checked={includeInsurance}
+                      onChange={(e) => {
+                        setIncludeInsurance(e.target.checked);
+                      }}
+                      className="h-4 w-4 rounded accent-[#273e8e] cursor-pointer"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      Include insurance
+                    </span>
+                  </div>
+                  <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-3 text-[12px] text-yellow-700">
+                    Optional: add product insurance separately from
+                    installation. Fee is a percentage of items subtotal.
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#00000080]">
+                      Insurance
+                      {serverInsurancePct > 0
+                        ? ` (${Number(serverInsurancePct)}% of items)`
+                        : ""}
+                    </span>
+                    <span
+                      className={`text-[#273e8e] ${
+                        !includeInsurance ? "line-through opacity-50" : ""
+                      }`}
+                    >
+                      ₦{insuranceToShow.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
                 {/* Flutterwave only — same as desktop (no payment-method tabs) */}
                 <div className="border border-gray-300 rounded-2xl p-4 bg-white space-y-3">
                   <p className="text-sm font-semibold text-[#1F2348]">
@@ -2605,6 +2702,42 @@ const Cart = () => {
                   </div>
                 </div>
 
+                <SectionHeading>Insurance</SectionHeading>
+                <div className="bg-white border rounded-2xl border-gray-400 p-4 space-y-3">
+                  <div className="flex items-center gap-3 mb-3">
+                    <input
+                      type="checkbox"
+                      checked={includeInsurance}
+                      onChange={(e) => {
+                        setIncludeInsurance(e.target.checked);
+                      }}
+                      className="h-4 w-4 rounded accent-[#273e8e] cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-gray-700">
+                      Include insurance
+                    </span>
+                  </div>
+                  <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-3 text-[12px] text-yellow-700">
+                    Optional: add product insurance separately from
+                    installation. Fee is a percentage of items subtotal.
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#00000080]">
+                      Insurance
+                      {serverInsurancePct > 0
+                        ? ` (${Number(serverInsurancePct)}% of items)`
+                        : ""}
+                    </span>
+                    <span
+                      className={`text-[#273e8e] ${
+                        !includeInsurance ? "line-through opacity-50" : ""
+                      }`}
+                    >
+                      ₦{insuranceToShow.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
                 <SectionHeading>Payment summary</SectionHeading>
                 <div className="bg-white border border-gray-400 rounded-2xl p-4 space-y-2 text-xs">
                   <div className="flex justify-between">
@@ -2618,13 +2751,13 @@ const Cart = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-600">
                       Insurance
-                      {includeInstallation && serverInsurancePct > 0
+                      {includeInsurance && serverInsurancePct > 0
                         ? ` (${Number(serverInsurancePct)}% of items)`
                         : ""}
                     </span>
                     <span className="text-[#273e8e] font-medium">
                       ₦
-                      {(includeInstallation
+                      {(includeInsurance
                         ? insuranceToShow
                         : 0
                       ).toLocaleString()}

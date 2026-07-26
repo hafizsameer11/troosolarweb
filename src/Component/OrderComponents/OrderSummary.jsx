@@ -1023,6 +1023,9 @@ const OrderSummary = ({ order, onBack }) => {
               vatAmount={pay.vat}
               vatPercent={pay.vatPct}
               insuranceAmount={pay.insurance}
+              insurancePercent={
+                Number(orderData.rawData?.insurance_fee_percentage) || 0
+              }
               showInsurance={pay.insurance > 0}
               grandTotal={pay.orderTotal}
             />
