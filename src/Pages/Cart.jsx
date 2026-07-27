@@ -1058,6 +1058,16 @@ const Cart = () => {
         }
       };
 
+      /** After paid checkout, go straight to order details (avoid empty cart ₦0 behind modal). */
+      const goToOrderDetails = (orderId) => {
+        fetchCartCount();
+        navigate(
+          orderId
+            ? `/more?section=myOrders&orderId=${orderId}`
+            : "/more?section=myOrders"
+        );
+      };
+
       const txRef = "txref_" + Date.now();
 
       await new Promise((resolve) => {
@@ -1075,9 +1085,9 @@ const Cart = () => {
                   window.closePaymentModal();
                 }
                 if (typeof onSuccessfulCharge === "function") {
-                  await onSuccessfulCharge(response);
-                  fetchCartCount();
-                  goToResult("success");
+                  const created = await onSuccessfulCharge(response);
+                  const orderId = created?.id ?? created?.order_id ?? null;
+                  goToOrderDetails(orderId);
                 } else if (legacyOrderId) {
                   const confirmed = await confirmPayment(
                     legacyOrderId,
@@ -1087,8 +1097,7 @@ const Cart = () => {
                     installDate
                   );
                   if (confirmed) {
-                    fetchCartCount();
-                    goToResult("success");
+                    goToOrderDetails(legacyOrderId);
                   } else {
                     console.error(
                       "Payment confirmation failed for order:",
@@ -1214,6 +1223,7 @@ const Cart = () => {
             );
           }
           setOrderData(data.data);
+          return data.data;
         },
       });
     } catch (e) {
@@ -1812,34 +1822,22 @@ const Cart = () => {
                       </div>
                     </>
                   )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-700">Inspection</span>
-                    <span
-                      className={
-                        includeInstallation
-                          ? "text-[#273e8e] font-medium"
-                          : "text-gray-400"
-                      }
-                    >
-                      {includeInstallation
-                        ? `₦${inspectionToShow.toLocaleString()}`
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-700">Installation</span>
-                    <span
-                      className={
-                        includeInstallation
-                          ? "text-[#273e8e] font-medium"
-                          : "text-gray-400"
-                      }
-                    >
-                      {includeInstallation
-                        ? `₦${installationToShow.toLocaleString()}`
-                        : "—"}
-                    </span>
-                  </div>
+                  {includeInstallation && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-700">Inspection</span>
+                        <span className="text-[#273e8e] font-medium">
+                          ₦{inspectionToShow.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-700">Installation</span>
+                        <span className="text-[#273e8e] font-medium">
+                          ₦{installationToShow.toLocaleString()}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-700">Delivery</span>
                     <span className="text-[#273e8e] font-medium">
@@ -2837,6 +2835,7 @@ const Cart = () => {
                             );
                           }
                           setOrderData(data.data);
+                          return data.data;
                         },
                       });
                     }}
