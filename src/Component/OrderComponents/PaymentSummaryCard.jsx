@@ -25,7 +25,7 @@ const PaymentSummaryCard = ({
     totalAmount,
     vatAmount,
     vatPercent,
-    /** Shop VAT is on items; Buy Now VAT is on Total Amount. */
+    /** VAT base shown in the summary; checkout flows use Total Amount. */
     vatBaseLabel = 'Total Amount',
     insuranceAmount,
     insurancePercent = 0,

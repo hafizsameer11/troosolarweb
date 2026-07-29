@@ -1917,7 +1917,7 @@ const Cart = () => {
                     <span className="text-gray-700">
                       VAT
                       {serverVatPct > 0
-                        ? ` (${Number(serverVatPct).toLocaleString()}%)`
+                        ? ` (${Number(serverVatPct).toLocaleString()}% of Total Amount)`
                         : ""}
                     </span>
                     <span className="text-[#273e8e] font-medium">
@@ -2744,7 +2744,7 @@ const Cart = () => {
                     <span className="text-gray-600">
                       VAT
                       {serverVatPct > 0
-                        ? ` (${Number(serverVatPct).toLocaleString()}%)`
+                        ? ` (${Number(serverVatPct).toLocaleString()}% of Total Amount)`
                         : ""}
                     </span>
                     <span className="text-[#273e8e] font-medium">

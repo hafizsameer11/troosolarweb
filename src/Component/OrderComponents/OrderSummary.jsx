@@ -89,9 +89,10 @@ const buildOrderPaymentBreakdown = (rawData) => {
   }
 
   if (!isBuyNow && vat <= 0 && itemsAfterDiscount > 0 && orderTotal > 0) {
-    // Shop cart VAT is on discounted items only (not delivery/install fees).
+    // Solar Store VAT is on Total Amount; insurance is added after VAT.
+    const vatBase = itemsAfterDiscount + serviceFeesTotal;
     const expectedVat =
-      Math.round(itemsAfterDiscount * (vatPct / 100) * 100) / 100;
+      Math.round(vatBase * (vatPct / 100) * 100) / 100;
     if (
       Math.abs(
         orderTotal -
@@ -1045,7 +1046,7 @@ const OrderSummary = ({ order, onBack }) => {
               totalAmount={pay.totalAmount}
               vatAmount={pay.vat}
               vatPercent={pay.vatPct}
-              vatBaseLabel={pay.isShop ? "Item Subtotal" : "Total Amount"}
+              vatBaseLabel="Total Amount"
               insuranceAmount={pay.insurance}
               insurancePercent={
                 Number(orderData.rawData?.insurance_fee_percentage) || 0
