@@ -25,6 +25,8 @@ const PaymentSummaryCard = ({
     totalAmount,
     vatAmount,
     vatPercent,
+    /** Shop VAT is on items; Buy Now VAT is on Total Amount. */
+    vatBaseLabel = 'Total Amount',
     insuranceAmount,
     insurancePercent = 0,
     grandTotal,
@@ -49,8 +51,8 @@ const PaymentSummaryCard = ({
                 <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wide">Payment summary</h3>
             </div>
             <div className="px-4 py-2">
-                {amountRow('Sub-Total', subTotalBeforeDiscount)}
-                {effectiveOutrightDiscount > 0 && amountRow(
+                {amountRow('Item Subtotal', subTotalBeforeDiscount)}
+                {effectiveOutrightDiscount >= 1 && amountRow(
                     discountPctLabel > 0
                         ? `Discount (${discountPctLabel}%)`
                         : 'Discount',
@@ -69,9 +71,9 @@ const PaymentSummaryCard = ({
                 )}
                 <SummaryDivider />
                 {amountRow('Total Amount', totalAmount, { emphasize: true })}
-                {amountRow(`VAT (${vatPercent}% of Total Amount)`, vatAmount, { prefix: '+' })}
+                {amountRow(`VAT (${vatPercent}% of ${vatBaseLabel})`, vatAmount, { prefix: '+' })}
                 {(showInsurance || insuranceAmount > 0) && amountRow(
-                    `Insurance Fee (${insurancePercent}% of Sub-Total)`,
+                    `Insurance Fee (${insurancePercent}% of Item Subtotal)`,
                     insuranceAmount,
                     { prefix: '+' }
                 )}

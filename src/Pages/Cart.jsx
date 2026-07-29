@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState, useContext } from "react";
+import React, { useEffect, useMemo, useState, useContext, useRef } from "react";
 import axios from "axios";
 import { LucideSquarePlus, ChevronLeft } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import CartItems from "../Component/CartItems";
 import SideBar from "../Component/SideBar";
 import { RxCrossCircled } from "react-icons/rx";
-import { GiCheckMark } from "react-icons/gi";
 import TopNavbar from "../Component/TopNavbar";
 import API, { BASE_URL, FLUTTERWAVE_PUBLIC_KEY } from "../config/api.config";
 import { ContextApi } from "../Context/AppContext";
@@ -241,13 +240,14 @@ const Cart = () => {
   const [serverVatAmount, setServerVatAmount] = useState(0);
   const [serverVatPct, setServerVatPct] = useState(0);
   const [serverInsurancePct, setServerInsurancePct] = useState(0);
-  /** Catalog items subtotal before online checkout discount (from checkout-summary). */
+  /** Catalog Item Subtotal before online checkout discount (from checkout-summary). */
   const [serverCatalogItemsTotal, setServerCatalogItemsTotal] = useState(null);
   /** From checkout-summary totals when online checkout discount applies. */
   const [serverOutrightDiscountAmount, setServerOutrightDiscountAmount] =
     useState(0);
   const [serverReferralOutrightPct, setServerReferralOutrightPct] = useState(0);
   const [installationNotice, setInstallationNotice] = useState("");
+  const [insuranceNotice, setInsuranceNotice] = useState("");
   const [type, setType] = useState("product");
   const [typeByRefId, setTypeByRefId] = useState(new Map());
 
@@ -255,6 +255,10 @@ const Cart = () => {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderData, setOrderData] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
+  /** After paid checkout succeeds — leave cart immediately; never show ₦0 summary. */
+  const [orderCheckoutComplete, setOrderCheckoutComplete] = useState(false);
+  const orderCheckoutCompleteRef = useRef(false);
+  const paidOrderLinesRef = useRef([]);
 
   // Add installation / insurance toggle state (independent of each other)
   const [includeInstallation, setIncludeInstallation] = useState(false);
@@ -270,6 +274,7 @@ const Cart = () => {
   // Cart: fetch
   // ─────────────────────────────
   const loadCart = async () => {
+    if (orderCheckoutCompleteRef.current) return;
     const authToken =
       typeof window !== "undefined"
         ? localStorage.getItem("access_token")
@@ -800,6 +805,7 @@ const Cart = () => {
   // Checkout summary
   // ─────────────────────────────
   const fetchCheckoutSummary = async (overrides = {}) => {
+    if (orderCheckoutCompleteRef.current) return;
     if (!token) return;
     const includeInstallFlag =
       typeof overrides.includeInstallation === "boolean"
@@ -829,6 +835,7 @@ const Cart = () => {
         : [];
       const delivery = payload.delivery || {};
       const installation = payload.installation || {};
+      const insuranceBlock = payload.insurance || {};
       const totals = payload.totals || {};
 
       setServerItemsTotal(
@@ -879,6 +886,9 @@ const Cart = () => {
       setServerInsurancePct(toNumber(totals.insurance_fee_percentage));
       setInstallationNotice(
         String(installation.description || "").trim()
+      );
+      setInsuranceNotice(
+        String(insuranceBlock.description || "").trim()
       );
       setType(cart.type);
 
@@ -946,6 +956,7 @@ const Cart = () => {
 
   // Keep checkout-summary in sync with cart lines, payment method, installation toggle, and desktop/mobile checkout steps.
   useEffect(() => {
+    if (orderCheckoutComplete) return;
     if (!token || !lines.length) return;
     const desktopCheckoutOpen = !checkout;
     const mobilePastCart =
@@ -960,7 +971,16 @@ const Cart = () => {
     includeInstallation,
     includeInsurance,
     token,
+    orderCheckoutComplete,
   ]);
+
+  // Safety net: if order was created but we are still on cart, leave immediately.
+  useEffect(() => {
+    if (!orderCheckoutComplete || !orderData?.id) return;
+    navigate(`/more?section=myOrders&orderId=${orderData.id}`, {
+      replace: true,
+    });
+  }, [orderCheckoutComplete, orderData?.id, navigate]);
 
   const installationDateOk = () => {
     if (!includeInstallation) return true;
@@ -1050,22 +1070,37 @@ const Cart = () => {
         typeof window !== "undefined" &&
         window.matchMedia("(max-width: 639px)").matches;
 
+      /** After paid checkout, go straight to order details (avoid empty cart ₦0 behind modal). */
+      const goToOrderDetails = (orderId) => {
+        orderCheckoutCompleteRef.current = true;
+        setOrderCheckoutComplete(true);
+        setCheckOutPayment(false);
+        setPaymentResult(null);
+        const path = orderId
+          ? `/more?section=myOrders&orderId=${orderId}`
+          : "/more?section=myOrders";
+        navigate(path, { replace: true });
+        // Refresh badge after leaving so an empty cart never paints under a modal.
+        setTimeout(() => {
+          try {
+            fetchCartCount();
+          } catch {
+            /* ignore */
+          }
+        }, 0);
+      };
+
       const goToResult = (status /* 'success' | 'failed' */) => {
-        setPaymentResult(status);
+        // Success must never stay on cart — only show a failure overlay here.
+        if (status === "success") {
+          goToOrderDetails(null);
+          return;
+        }
+        setPaymentResult("failed");
         setMobileStep("result");
         if (!isSmallScreen) {
           setCheckOutPayment(true);
         }
-      };
-
-      /** After paid checkout, go straight to order details (avoid empty cart ₦0 behind modal). */
-      const goToOrderDetails = (orderId) => {
-        fetchCartCount();
-        navigate(
-          orderId
-            ? `/more?section=myOrders&orderId=${orderId}`
-            : "/more?section=myOrders"
-        );
       };
 
       const txRef = "txref_" + Date.now();
@@ -1085,6 +1120,7 @@ const Cart = () => {
                   window.closePaymentModal();
                 }
                 if (typeof onSuccessfulCharge === "function") {
+                  paidOrderLinesRef.current = lines.map((l) => ({ ...l }));
                   const created = await onSuccessfulCharge(response);
                   const orderId = created?.id ?? created?.order_id ?? null;
                   goToOrderDetails(orderId);
@@ -1097,6 +1133,7 @@ const Cart = () => {
                     installDate
                   );
                   if (confirmed) {
+                    paidOrderLinesRef.current = lines.map((l) => ({ ...l }));
                     goToOrderDetails(legacyOrderId);
                   } else {
                     console.error(
@@ -1632,7 +1669,7 @@ const Cart = () => {
                   </div>
                   <hr className="border-gray-300" />
                   <div className="flex justify-between text-[#00000080] text-sm">
-                    <span>Items subtotal</span>
+                    <span>Item Subtotal</span>
                     <span className="text-[#273E8E]">
                       ₦{itemsCatalogSubtotal.toLocaleString()}
                     </span>
@@ -1764,15 +1801,15 @@ const Cart = () => {
                     >
                       <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg py-2 px-2">
                         <p className="text-yellow-600">
-                          Optional: add product insurance separately from
-                          installation. Fee is a percentage of items subtotal.
+                          {insuranceNotice ||
+                            "Optional: add product insurance separately from installation. Fee is a percentage of Item Subtotal."}
                         </p>
                       </div>
                       <div className="flex justify-between text-[#00000080] text-sm">
                         <span>
                           Insurance
                           {serverInsurancePct > 0
-                            ? ` (${Number(serverInsurancePct)}% of items)`
+                            ? ` (${Number(serverInsurancePct)}% of Item Subtotal)`
                             : ""}
                         </span>
                         <span
@@ -1798,7 +1835,7 @@ const Cart = () => {
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-700">Items subtotal</span>
+                    <span className="text-gray-700">Item Subtotal</span>
                     <span className="text-[#273e8e] font-medium">
                       ₦{itemsCatalogSubtotal.toLocaleString()}
                     </span>
@@ -1856,7 +1893,7 @@ const Cart = () => {
                           {Number.isFinite(Number(serverInsurancePct))
                             ? `${Number(serverInsurancePct)}%`
                             : "—"}{" "}
-                          of items subtotal)
+                          of Item Subtotal)
                         </>
                       ) : (
                         <span className="text-gray-500">
@@ -1963,103 +2000,45 @@ const Cart = () => {
           </section>
         </main>
 
-        {/* Final Confirmation Modal (desktop) */}
-        {checkoutPayment && (
+        {/* Payment failure modal only (success redirects to order details) */}
+        {checkoutPayment && paymentResult === "failed" && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
             <div className="w-[90%] max-w-[430px] bg-white rounded-2xl shadow-md p-4">
               <div className="max-h-[450px] overflow-y-auto border rounded-2xl p-4">
                 <div className="flex flex-col items-center gap-5 text-center">
-                  <div
-                    className={`${
-                      checkout ? "bg-red-600 " : "bg-green-600"
-                    } rounded-full flex items-center justify-center h-[100px] w-[100px]`}
-                  >
-                    {checkout ? (
-                      <RxCrossCircled size={40} color="white" />
-                    ) : (
-                      <GiCheckMark size={40} color="white" />
-                    )}
+                  <div className="bg-red-600 rounded-full flex items-center justify-center h-[100px] w-[100px]">
+                    <RxCrossCircled size={40} color="white" />
                   </div>
 
                   <p className="text-[15px]">
-                    {checkout ? (
-                      <span>
-                        Oops! Something went wrong with your order.
-                        <br />
-                        Please try again or contact support.
-                      </span>
-                    ) : (
-                      <span>
-                        <strong>Congratulations</strong> — your order has been
-                        placed successfully. We&apos;ve sent a confirmation email
-                        to your registered email address. Our team will contact you
-                        with delivery updates.
-                        {orderData?.payment_method === "bank_transfer" ? (
-                          <>
-                            <br />
-                            <br />
-                            <span className="text-gray-700">
-                              Complete your payment by bank transfer using your
-                              order number as the payment reference.
-                            </span>
-                          </>
-                        ) : null}
-                      </span>
-                    )}
+                    Oops! Something went wrong with your order.
+                    <br />
+                    Please try again or contact support.
                   </p>
-
-                  <div className="w-full text-start text-sm max-w-[350px] space-y-3">
-                    {lines.length > 0 ? (
-                      lines.map((line) => (
-                        <CartItems
-                          key={line.cartLineId}
-                          itemId={line.cartLineId}
-                          productId={line.refId}
-                          name={line.name}
-                          price={line.unitPrice}
-                          image={line.image}
-                          showControls={false}
-                          quantity={line.qty}
-                          linkPath={
-                            line.type === "bundle" 
-                              ? `/productBundle/details/${line.refId}`
-                              : `/homePage/product/${line.refId}`
-                          }
-                        />
-                      ))
-                    ) : (
-                      <div className="bg-white border rounded-xl p-4 text-gray-500">
-                        No items
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
 
               <div className="flex flex-col gap-2 mt-4">
-                {checkout ? (
-                  <Link
-                    to="/homePage?from=cart#catalog-products"
-                    onClick={() => setCheckOutPayment(false)}
-                    className="py-4 text-sm text-center rounded-full bg-[#273e8e] text-white hover:bg-[#1f2f6e] transition"
-                  >
-                    Add more products
-                  </Link>
-                ) : (
-                  <Link
-                    to={
-                      orderData?.id
-                        ? `/more?section=myOrders&orderId=${orderData.id}`
-                        : "/more?section=myOrders"
-                    }
-                    onClick={() => setCheckOutPayment(false)}
-                    className="py-4 text-sm text-center rounded-full bg-[#273e8e] text-white hover:bg-[#1f2f6e] transition"
-                  >
-                    See Order Details
-                  </Link>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckOutPayment(false);
+                    setPaymentResult(null);
+                  }}
+                  className="py-4 text-sm text-center rounded-full bg-[#273e8e] text-white hover:bg-[#1f2f6e] transition"
+                >
+                  Back to checkout
+                </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {orderCheckoutComplete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80">
+            <p className="text-sm text-[#273e8e] font-medium">
+              Order placed — opening your order…
+            </p>
           </div>
         )}
       </div>
@@ -2370,7 +2349,7 @@ const Cart = () => {
                   </div>
 
                   <div className="flex justify-between items-center py-3 border-t border-gray-200 text-xs">
-                    <span className="text-gray-500">Items subtotal</span>
+                    <span className="text-gray-500">Item Subtotal</span>
                     <span className="text-[#273e8e] font-semibold">
                       ₦{itemsCatalogSubtotal.toLocaleString()}
                     </span>
@@ -2483,14 +2462,14 @@ const Cart = () => {
                     </span>
                   </div>
                   <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-3 text-[12px] text-yellow-700">
-                    Optional: add product insurance separately from
-                    installation. Fee is a percentage of items subtotal.
+                    {insuranceNotice ||
+                      "Optional: add product insurance separately from installation. Fee is a percentage of Item Subtotal."}
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-[#00000080]">
                       Insurance
                       {serverInsurancePct > 0
-                        ? ` (${Number(serverInsurancePct)}% of items)`
+                        ? ` (${Number(serverInsurancePct)}% of Item Subtotal)`
                         : ""}
                     </span>
                     <span
@@ -2607,7 +2586,7 @@ const Cart = () => {
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#00000080]">Items subtotal</span>
+                    <span className="text-[#00000080]">Item Subtotal</span>
                     <span className="text-[#273e8e]">
                       ₦{itemsCatalogSubtotal.toLocaleString()}
                     </span>
@@ -2716,14 +2695,14 @@ const Cart = () => {
                     </span>
                   </div>
                   <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-3 text-[12px] text-yellow-700">
-                    Optional: add product insurance separately from
-                    installation. Fee is a percentage of items subtotal.
+                    {insuranceNotice ||
+                      "Optional: add product insurance separately from installation. Fee is a percentage of Item Subtotal."}
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-[#00000080]">
                       Insurance
                       {serverInsurancePct > 0
-                        ? ` (${Number(serverInsurancePct)}% of items)`
+                        ? ` (${Number(serverInsurancePct)}% of Item Subtotal)`
                         : ""}
                     </span>
                     <span
@@ -2750,7 +2729,7 @@ const Cart = () => {
                     <span className="text-gray-600">
                       Insurance
                       {includeInsurance && serverInsurancePct > 0
-                        ? ` (${Number(serverInsurancePct)}% of items)`
+                        ? ` (${Number(serverInsurancePct)}% of Item Subtotal)`
                         : ""}
                     </span>
                     <span className="text-[#273e8e] font-medium">
@@ -2847,111 +2826,39 @@ const Cart = () => {
               </>
             )}
 
-            {/* STEP 4: Result (mobile full-screen page) */}
-            {mobileStep === "result" && (
+            {/* STEP 4: Result (mobile) — success redirects; only failure stays here */}
+            {mobileStep === "result" && paymentResult === "failed" && (
               <div className="flex flex-col gap-4">
                 <div className="bg-white rounded-2xl border p-4">
                   <div className="flex flex-col items-center text-center gap-4 py-4">
-                    <div
-                      className={`${
-                        paymentResult === "success"
-                          ? "bg-green-500"
-                          : "bg-red-500"
-                      } h-24 w-24 rounded-full flex items-center justify-center`}
-                    >
-                      {paymentResult === "success" ? (
-                        <GiCheckMark size={40} color="white" />
-                      ) : (
-                        <RxCrossCircled size={40} color="white" />
-                      )}
+                    <div className="bg-red-500 h-24 w-24 rounded-full flex items-center justify-center">
+                      <RxCrossCircled size={40} color="white" />
                     </div>
 
-                    {paymentResult === "success" ? (
-                      <p className="text-sm text-[#1F2348] leading-6">
-                        <strong>Congratulations</strong> — your order has been
-                        placed successfully. We&apos;ve sent a confirmation email
-                        to your registered email address. Our team will contact you
-                        with delivery updates.
-                        {orderData?.payment_method === "bank_transfer" ? (
-                          <>
-                            <br />
-                            <br />
-                            Use your order number as the reference when you complete
-                            your bank transfer.
-                          </>
-                        ) : null}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-[#1F2348] leading-6">
-                        Your order could not be placed due to a failed payment
-                      </p>
-                    )}
-
-                    {/* Product rows - Show all ordered items */}
-                    <div className="w-full space-y-3">
-                      {lines.length > 0 ? (
-                        lines.map((line) => (
-                          <div
-                            key={line.cartLineId}
-                            className="border rounded-xl p-3 flex items-center gap-3"
-                          >
-                            <Link
-                              to={
-                                line.type === "bundle" 
-                                  ? `/productBundle/details/${line.refId}`
-                                  : `/homePage/product/${line.refId}`
-                              }
-                              className="flex items-center gap-3 w-full"
-                            >
-                              <img
-                                src={line.image || FALLBACK_IMAGE}
-                                alt={line.name}
-                                className="h-14 w-14 object-contain rounded bg-gray-100"
-                                onError={(e) => {
-                                  if (e.target.src !== FALLBACK_IMAGE) e.target.src = FALLBACK_IMAGE;
-                                }}
-                              />
-                              <div className="flex-1">
-                                <p className="text-sm line-clamp-2 hover:text-[#273e8e] hover:underline transition-colors">
-                                  {line.name}
-                                </p>
-                                <p className="text-[#273e8e] font-semibold">
-                                  ₦{line.unitPrice.toLocaleString()} x{" "}
-                                  {line.qty}
-                                </p>
-                              </div>
-                            </Link>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="border rounded-xl p-3 text-gray-500 text-center">
-                          No items found
-                        </div>
-                      )}
-                    </div>
-
+                    <p className="text-sm text-[#1F2348] leading-6">
+                      Your order could not be placed due to a failed payment
+                    </p>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  className="w-full rounded-full bg-[#273e8e] text-white py-4"
                   onClick={() => {
-                    if (paymentResult === "success") {
-                      navigate(
-                        orderData?.id
-                          ? `/more?section=myOrders&orderId=${orderData.id}`
-                          : "/more?section=myOrders"
-                      );
-                    } else {
-                      navigate("/homePage");
-                    }
+                    setPaymentResult(null);
+                    setMobileStep("summary");
                   }}
+                  className="w-full py-4 rounded-full bg-[#273e8e] text-white text-[12px]"
                 >
-                  {paymentResult === "success"
-                    ? "See Order Details"
-                    : "Continue Shopping"}
+                  Back to summary
                 </button>
+              </div>
+            )}
+
+            {orderCheckoutComplete && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 sm:hidden">
+                <p className="text-sm text-[#273e8e] font-medium px-6 text-center">
+                  Order placed — opening your order…
+                </p>
               </div>
             )}
           </div>

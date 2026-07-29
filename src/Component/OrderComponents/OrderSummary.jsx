@@ -40,6 +40,7 @@ const buildOrderPaymentBreakdown = (rawData) => {
   const catalogSubtotal =
     parseMoney(rawData.catalog_items_subtotal) || itemsFromLines;
   const isBuyNow = String(rawData.order_type || "").toLowerCase() === "buy_now";
+  const isShop = String(rawData.order_type || "").toLowerCase() === "shop";
   let discount = parseMoney(rawData.online_checkout_discount_amount);
   let itemsAfterDiscount = isBuyNow
     ? (parseMoney(rawData.product_price) ||
@@ -62,6 +63,14 @@ const buildOrderPaymentBreakdown = (rawData) => {
 
   if (discount <= 0 && catalogSubtotal > itemsAfterDiscount + 0.005) {
     discount = catalogSubtotal - itemsAfterDiscount;
+  }
+
+  // Shop / cart: never invent Net Total via reverse-VAT (phantom ₦0.15 / ₦0.23 "discounts").
+  if (!isBuyNow && catalogSubtotal > 0) {
+    if (Math.abs(itemsAfterDiscount - catalogSubtotal) < 1 || (discount > 0 && discount < 1)) {
+      itemsAfterDiscount = catalogSubtotal;
+      discount = 0;
+    }
   }
 
   // Buy Now only: infer discount from grand total when API fields are incomplete.
@@ -117,11 +126,23 @@ const buildOrderPaymentBreakdown = (rawData) => {
 
   const totalAmount = itemsAfterDiscount + serviceFeesTotal;
 
+  // Shop grand total must match checkout (whole naira), not kobo drift from reverse math.
+  let displayGrandTotal = orderTotal;
+  if (isShop && orderTotal > 0) {
+    const reconstructed =
+      itemsAfterDiscount + serviceFeesTotal + vat + insurance;
+    if (Math.abs(orderTotal - reconstructed) < 1) {
+      displayGrandTotal = Math.round(reconstructed);
+    } else {
+      displayGrandTotal = Math.round(orderTotal);
+    }
+  }
+
   return {
     catalogSubtotal,
-    discount,
-    discountPctLabel,
-    outrightDiscountPct,
+    discount: discount >= 1 ? discount : 0,
+    discountPctLabel: discount >= 1 ? discountPctLabel : "",
+    outrightDiscountPct: discount >= 1 ? outrightDiscountPct : null,
     itemsAfterDiscount,
     delivery,
     installation,
@@ -132,7 +153,9 @@ const buildOrderPaymentBreakdown = (rawData) => {
     totalAmount,
     vat,
     vatPct,
-    orderTotal,
+    orderTotal: displayGrandTotal,
+    isShop,
+    isBuyNow,
   };
 };
 
@@ -1022,6 +1045,7 @@ const OrderSummary = ({ order, onBack }) => {
               totalAmount={pay.totalAmount}
               vatAmount={pay.vat}
               vatPercent={pay.vatPct}
+              vatBaseLabel={pay.isShop ? "Item Subtotal" : "Total Amount"}
               insuranceAmount={pay.insurance}
               insurancePercent={
                 Number(orderData.rawData?.insurance_fee_percentage) || 0

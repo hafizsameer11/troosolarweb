@@ -18,7 +18,7 @@ import {
   sortStoreCatalogItems,
   resolveBundleInverterRatingDisplay,
 } from "../utils/bundleSort";
-import { getBundleStoreCategoryLabel, normalizeBrandFilterSelection, catalogItemMatchesBrandFilter } from "../utils/storeCatalog";
+import { getBundleStoreCategoryLabel, normalizeBrandFilterSelection, catalogItemMatchesBrandFilter, itemMatchesStoreCategory } from "../utils/storeCatalog";
 import { withShopSource } from "../utils/shopSource";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
@@ -626,7 +626,18 @@ const HomePage = () => {
 
   // Enrich cards with category name and apply storefront sort order
   const gridProducts = useMemo(() => {
-    const enriched = filteredBySizeAndPrice.map((p) => ({
+    // Always honor the category strip / dropdown (Solar Bundles / Inverter Bundles
+    // must show matching bundles even if SearchBar filter state lags).
+    let source = filteredBySizeAndPrice;
+    if (selectedCategoryId !== "all") {
+      source = source.filter((item) =>
+        itemMatchesStoreCategory(item, activeCategoryLabel, selectedCategoryId, {
+          strict: true,
+        })
+      );
+    }
+
+    const enriched = source.map((p) => ({
       ...p,
       categoryName:
         p.categoryName || catMap[p.categoryId] || "Solar Product",
@@ -635,7 +646,12 @@ const HomePage = () => {
     return sortStoreCatalogItems(enriched, {
       categoryLabel: activeCategoryLabel,
     });
-  }, [filteredBySizeAndPrice, catMap, activeCategoryLabel]);
+  }, [
+    filteredBySizeAndPrice,
+    catMap,
+    activeCategoryLabel,
+    selectedCategoryId,
+  ]);
 
   // Pagination calculations
   const totalItems = gridProducts.length;
