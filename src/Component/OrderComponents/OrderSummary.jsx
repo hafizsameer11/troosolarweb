@@ -127,15 +127,15 @@ const buildOrderPaymentBreakdown = (rawData) => {
 
   const totalAmount = itemsAfterDiscount + serviceFeesTotal;
 
-  // Shop grand total must match checkout (whole naira), not kobo drift from reverse math.
+  // Shop grand total must match checkout to two decimal places.
   let displayGrandTotal = orderTotal;
   if (isShop && orderTotal > 0) {
     const reconstructed =
       itemsAfterDiscount + serviceFeesTotal + vat + insurance;
     if (Math.abs(orderTotal - reconstructed) < 1) {
-      displayGrandTotal = Math.round(reconstructed);
+      displayGrandTotal = Math.round(reconstructed * 100) / 100;
     } else {
-      displayGrandTotal = Math.round(orderTotal);
+      displayGrandTotal = Math.round(orderTotal * 100) / 100;
     }
   }
 

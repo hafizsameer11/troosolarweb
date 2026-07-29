@@ -23,6 +23,12 @@ const toNumber = (v) =>
     ? v
     : Number(String(v ?? "").replace(/[^\d.]/g, "")) || 0;
 
+const formatMoney = (value) =>
+  Number(value || 0).toLocaleString("en-NG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 // Turn BASE_URL (http://.../api) into origin (http://...)
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
 const FALLBACK_IMAGE =
@@ -1671,7 +1677,7 @@ const Cart = () => {
                   <div className="flex justify-between text-[#00000080] text-sm">
                     <span>Item Subtotal</span>
                     <span className="text-[#273E8E]">
-                      ₦{itemsCatalogSubtotal.toLocaleString()}
+                      ₦{formatMoney(itemsCatalogSubtotal)}
                     </span>
                   </div>
                   {showOutrightDiscountRow && (
@@ -1680,13 +1686,13 @@ const Cart = () => {
                         <span>{outrightDiscountLabel}</span>
                         <span className="text-emerald-700">
                           −₦
-                          {Math.round(outrightDiscountAmount).toLocaleString()}
+                          {formatMoney(outrightDiscountAmount)}
                         </span>
                       </div>
                       <div className="flex justify-between text-[#00000080] text-sm font-medium">
                         <span>Items after discount</span>
                         <span className="text-[#273E8E]">
-                          ₦{itemsChargedSubtotal.toLocaleString()}
+                          ₦{formatMoney(itemsChargedSubtotal)}
                         </span>
                       </div>
                     </>
@@ -1758,7 +1764,7 @@ const Cart = () => {
                               : ""
                           }`}
                         >
-                          ₦{inspectionToShow.toLocaleString()}
+                          ₦{formatMoney(inspectionToShow)}
                         </span>
                       </div>
                       <div className="flex justify-between text-[#00000080] text-sm">
@@ -1770,7 +1776,7 @@ const Cart = () => {
                               : ""
                           }`}
                         >
-                          ₦{installationToShow.toLocaleString()}
+                          ₦{formatMoney(installationToShow)}
                         </span>
                       </div>
                     </div>
@@ -1819,7 +1825,7 @@ const Cart = () => {
                               : ""
                           }`}
                         >
-                          ₦{insuranceToShow.toLocaleString()}
+                          ₦{formatMoney(insuranceToShow)}
                         </span>
                       </div>
                     </div>
@@ -1837,7 +1843,7 @@ const Cart = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-700">Item Subtotal</span>
                     <span className="text-[#273e8e] font-medium">
-                      ₦{itemsCatalogSubtotal.toLocaleString()}
+                      ₦{formatMoney(itemsCatalogSubtotal)}
                     </span>
                   </div>
                   {showOutrightDiscountRow && (
@@ -1848,13 +1854,13 @@ const Cart = () => {
                         </span>
                         <span className="text-emerald-700 font-medium">
                           −₦
-                          {Math.round(outrightDiscountAmount).toLocaleString()}
+                          {formatMoney(outrightDiscountAmount)}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm border-t border-dashed border-gray-200 pt-2">
                         <span className="text-gray-700">Items after discount</span>
                         <span className="text-[#273e8e] font-medium">
-                          ₦{itemsChargedSubtotal.toLocaleString()}
+                          ₦{formatMoney(itemsChargedSubtotal)}
                         </span>
                       </div>
                     </>
@@ -1864,13 +1870,13 @@ const Cart = () => {
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-700">Inspection</span>
                         <span className="text-[#273e8e] font-medium">
-                          ₦{inspectionToShow.toLocaleString()}
+                          ₦{formatMoney(inspectionToShow)}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-700">Installation</span>
                         <span className="text-[#273e8e] font-medium">
-                          ₦{installationToShow.toLocaleString()}
+                          ₦{formatMoney(installationToShow)}
                         </span>
                       </div>
                     </>
@@ -1879,7 +1885,7 @@ const Cart = () => {
                     <span className="text-gray-700">Delivery</span>
                     <span className="text-[#273e8e] font-medium">
                       {deliveryToShow
-                        ? `₦${deliveryToShow.toLocaleString()}`
+                        ? `₦${formatMoney(deliveryToShow)}`
                         : "Free"}
                     </span>
                   </div>
@@ -1910,7 +1916,7 @@ const Cart = () => {
                       }
                     >
                       ₦
-                      {(includeInsurance ? insuranceToShow : 0).toLocaleString()}
+                      {formatMoney(includeInsurance ? insuranceToShow : 0)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -1921,13 +1927,13 @@ const Cart = () => {
                         : ""}
                     </span>
                     <span className="text-[#273e8e] font-medium">
-                      ₦{Number(serverVatAmount || 0).toLocaleString()}
+                      ₦{formatMoney(serverVatAmount)}
                     </span>
                   </div>
                   <hr className="border-gray-300" />
                   <div className="flex justify-between font-bold text-[#273e8e] text-base">
                     <span>Total</span>
-                    <span>₦{grandTotal.toLocaleString()}</span>
+                    <span>₦{formatMoney(grandTotal)}</span>
                   </div>
                   <p className="text-xs text-gray-500">
                     Total includes VAT where applicable.
@@ -1947,7 +1953,7 @@ const Cart = () => {
                   <p className="text-xs text-gray-500">
                     Total (incl. VAT):{" "}
                     <span className="font-semibold text-[#273e8e]">
-                      ₦{grandTotal.toLocaleString()}
+                      ₦{formatMoney(grandTotal)}
                     </span>
                   </p>
                 </div>
@@ -2351,7 +2357,7 @@ const Cart = () => {
                   <div className="flex justify-between items-center py-3 border-t border-gray-200 text-xs">
                     <span className="text-gray-500">Item Subtotal</span>
                     <span className="text-[#273e8e] font-semibold">
-                      ₦{itemsCatalogSubtotal.toLocaleString()}
+                      ₦{formatMoney(itemsCatalogSubtotal)}
                     </span>
                   </div>
                   {showOutrightDiscountRow && (
@@ -2362,13 +2368,13 @@ const Cart = () => {
                         </span>
                         <span className="text-emerald-700 font-semibold">
                           −₦
-                          {Math.round(outrightDiscountAmount).toLocaleString()}
+                          {formatMoney(outrightDiscountAmount)}
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-3 border-t border-gray-200 text-xs font-semibold">
                         <span className="text-gray-600">Items after discount</span>
                         <span className="text-[#273e8e]">
-                          ₦{itemsChargedSubtotal.toLocaleString()}
+                          ₦{formatMoney(itemsChargedSubtotal)}
                         </span>
                       </div>
                     </>
@@ -2431,7 +2437,7 @@ const Cart = () => {
                         !includeInstallation ? "line-through opacity-50" : ""
                       }`}
                     >
-                      ₦{inspectionToShow.toLocaleString()}
+                      ₦{formatMoney(inspectionToShow)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -2441,7 +2447,7 @@ const Cart = () => {
                         !includeInstallation ? "line-through opacity-50" : ""
                       }`}
                     >
-                      ₦{installationToShow.toLocaleString()}
+                      ₦{formatMoney(installationToShow)}
                     </span>
                   </div>
                 </div>
@@ -2477,7 +2483,7 @@ const Cart = () => {
                         !includeInsurance ? "line-through opacity-50" : ""
                       }`}
                     >
-                      ₦{insuranceToShow.toLocaleString()}
+                      ₦{formatMoney(insuranceToShow)}
                     </span>
                   </div>
                 </div>
@@ -2495,7 +2501,7 @@ const Cart = () => {
                   <p className="text-[11px] text-gray-500">
                     Total (incl. VAT):{" "}
                     <span className="font-semibold text-[#273e8e]">
-                      ₦{grandTotal.toLocaleString()}
+                      ₦{formatMoney(grandTotal)}
                     </span>
                   </p>
                 </div>
@@ -2505,7 +2511,7 @@ const Cart = () => {
                   <div>
                     <p className="text-sm text-gray-700">Total (incl. VAT)</p>
                     <p className="mt-1 font-[500] text-[18px] text-[#273e8e]">
-                      ₦{grandTotal.toLocaleString()}
+                      ₦{formatMoney(grandTotal)}
                     </p>
                   </div>
                   <button
@@ -2588,7 +2594,7 @@ const Cart = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-[#00000080]">Item Subtotal</span>
                     <span className="text-[#273e8e]">
-                      ₦{itemsCatalogSubtotal.toLocaleString()}
+                      ₦{formatMoney(itemsCatalogSubtotal)}
                     </span>
                   </div>
                   {showOutrightDiscountRow && (
@@ -2599,13 +2605,13 @@ const Cart = () => {
                         </span>
                         <span className="text-emerald-700">
                           −₦
-                          {Math.round(outrightDiscountAmount).toLocaleString()}
+                          {formatMoney(outrightDiscountAmount)}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm font-medium">
                         <span className="text-gray-700">Items after discount</span>
                         <span className="text-[#273e8e]">
-                          ₦{itemsChargedSubtotal.toLocaleString()}
+                          ₦{formatMoney(itemsChargedSubtotal)}
                         </span>
                       </div>
                     </>
@@ -2664,7 +2670,7 @@ const Cart = () => {
                         !includeInstallation ? "line-through opacity-50" : ""
                       }`}
                     >
-                      ₦{inspectionToShow.toLocaleString()}
+                      ₦{formatMoney(inspectionToShow)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
@@ -2674,7 +2680,7 @@ const Cart = () => {
                         !includeInstallation ? "line-through opacity-50" : ""
                       }`}
                     >
-                      ₦{installationToShow.toLocaleString()}
+                      ₦{formatMoney(installationToShow)}
                     </span>
                   </div>
                 </div>
@@ -2710,7 +2716,7 @@ const Cart = () => {
                         !includeInsurance ? "line-through opacity-50" : ""
                       }`}
                     >
-                      ₦{insuranceToShow.toLocaleString()}
+                      ₦{formatMoney(insuranceToShow)}
                     </span>
                   </div>
                 </div>
@@ -2721,7 +2727,7 @@ const Cart = () => {
                     <span className="text-gray-600">Delivery</span>
                     <span className="text-[#273e8e] font-medium">
                       {deliveryToShow
-                        ? `₦${deliveryToShow.toLocaleString()}`
+                        ? `₦${formatMoney(deliveryToShow)}`
                         : "Free"}
                     </span>
                   </div>
@@ -2734,10 +2740,9 @@ const Cart = () => {
                     </span>
                     <span className="text-[#273e8e] font-medium">
                       ₦
-                      {(includeInsurance
+                      {formatMoney(includeInsurance
                         ? insuranceToShow
-                        : 0
-                      ).toLocaleString()}
+                        : 0)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -2748,7 +2753,7 @@ const Cart = () => {
                         : ""}
                     </span>
                     <span className="text-[#273e8e] font-medium">
-                      ₦{Number(serverVatAmount || 0).toLocaleString()}
+                      ₦{formatMoney(serverVatAmount)}
                     </span>
                   </div>
                 </div>
@@ -2769,7 +2774,7 @@ const Cart = () => {
                   <div>
                     <p className="text-sm text-gray-700">Total</p>
                     <p className="mt-1 font-[500] text-[18px] text-[#273e8e]">
-                      ₦{(orderData?.total_price || grandTotal).toLocaleString()}
+                      ₦{formatMoney(orderData?.total_price || grandTotal)}
                     </p>
                   </div>
 
