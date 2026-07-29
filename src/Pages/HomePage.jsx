@@ -459,8 +459,7 @@ const HomePage = () => {
               categoryIds,
             };
           })
-          .filter(Boolean)
-          .sort((a, b) => a.name.localeCompare(b.name));
+          .filter(Boolean);
 
         if (mounted) setBrandOptions(options);
       } catch {
