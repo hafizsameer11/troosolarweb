@@ -254,6 +254,7 @@ const Cart = () => {
   const [serverReferralOutrightPct, setServerReferralOutrightPct] = useState(0);
   const [installationNotice, setInstallationNotice] = useState("");
   const [insuranceNotice, setInsuranceNotice] = useState("");
+  const [serverFeeBreakdown, setServerFeeBreakdown] = useState(null);
   const [type, setType] = useState("product");
   const [typeByRefId, setTypeByRefId] = useState(new Map());
 
@@ -867,6 +868,7 @@ const Cart = () => {
       );
       setServerDeliveryPrice(toNumber(delivery.price));
       setServerInstallPrice(toNumber(installation.price));
+      setServerFeeBreakdown(totals.fee_breakdown || null);
       setServerInspectionPrice(
         toNumber(
           installation.inspection_price ??
@@ -1879,6 +1881,24 @@ const Cart = () => {
                           ₦{formatMoney(installationToShow)}
                         </span>
                       </div>
+                      {serverFeeBreakdown?.installation_lines?.length > 0 && (
+                        <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs text-gray-600 space-y-1">
+                          <p className="font-medium text-gray-700">
+                            Installation breakdown
+                          </p>
+                          {serverFeeBreakdown.installation_lines.map((line) => (
+                            <div
+                              key={`${line.label}-${line.quantity}`}
+                              className="flex justify-between gap-2"
+                            >
+                              <span>
+                                {line.label} (×{line.quantity})
+                              </span>
+                              <span>₦{formatMoney(line.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </>
                   )}
                   <div className="flex justify-between text-sm">
@@ -1889,6 +1909,37 @@ const Cart = () => {
                         : "Free"}
                     </span>
                   </div>
+                  {serverFeeBreakdown?.delivery_lines?.length > 0 && (
+                    <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs text-gray-600 space-y-1">
+                      <p className="font-medium text-gray-700">
+                        Delivery breakdown
+                      </p>
+                      {serverFeeBreakdown.quantities && (
+                        <p className="text-[11px] text-gray-500">
+                          Panels (delivery): {serverFeeBreakdown.quantities.panels_delivery ?? 0}
+                          {" · "}
+                          Panels (install): {serverFeeBreakdown.quantities.panels_installation ?? 0}
+                          {" · "}
+                          Inverters: {serverFeeBreakdown.quantities.inverters ?? 0}
+                          {" · "}
+                          Batteries: {serverFeeBreakdown.quantities.batteries ?? 0}
+                          {" · "}
+                          Streetlights: {serverFeeBreakdown.quantities.streetlights ?? 0}
+                        </p>
+                      )}
+                      {serverFeeBreakdown.delivery_lines.map((line) => (
+                        <div
+                          key={`${line.label}-${line.quantity}`}
+                          className="flex justify-between gap-2"
+                        >
+                          <span>
+                            {line.label} (×{line.quantity})
+                          </span>
+                          <span>₦{formatMoney(line.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-700 text-right max-w-[70%] leading-snug">
                       Insurance
@@ -2731,6 +2782,21 @@ const Cart = () => {
                         : "Free"}
                     </span>
                   </div>
+                  {serverFeeBreakdown?.delivery_lines?.length > 0 && (
+                    <div className="rounded-lg bg-gray-50 border border-gray-100 px-2 py-2 space-y-1">
+                      {serverFeeBreakdown.delivery_lines.map((line) => (
+                        <div
+                          key={`m-del-${line.label}-${line.quantity}`}
+                          className="flex justify-between gap-2 text-[11px] text-gray-600"
+                        >
+                          <span>
+                            {line.label} (×{line.quantity})
+                          </span>
+                          <span>₦{formatMoney(line.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-gray-600">
                       Insurance
