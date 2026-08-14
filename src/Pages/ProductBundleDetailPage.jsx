@@ -15,9 +15,7 @@ import {
   BNPL_MIN_FALLBACK,
   BNPL_PROMO_COPY,
   fetchBnplMinimumLoanAmount,
-  isBnplEligiblePrice,
 } from "../utils/bnplEligibility";
-import { isFromShop } from "../utils/shopSource";
 import { loginPathWithReturn } from "../utils/authRedirect";
 
 // Turn BASE_URL (http://localhost:8000/api) into origin (http://localhost:8000)
@@ -354,10 +352,8 @@ const ProductBundle = () => {
   const searchParams = new URLSearchParams(location.search);
   const flowType = searchParams.get("flow"); // 'buy_now' or 'bnpl'
   const cartToken = searchParams.get("token");
-  // Solar Shop / store: Add to Cart only. Keep Buy Now / BNPL for explicit flows & custom-order tokens.
-  const isShopMode =
-    isFromShop(searchParams) ||
-    (!cartToken && flowType !== "buy_now" && flowType !== "bnpl");
+  // Bundles always use Buy Now / BNPL — not Solar Shop add-to-cart.
+  const isShopMode = false;
 
   const [productData, setProductData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -424,14 +420,7 @@ const ProductBundle = () => {
     };
   }, []);
 
-  const showBnplOption = useMemo(
-    () =>
-      isBnplEligiblePrice(
-        productData?.priceAmount ?? toNumber(productData?.price),
-        bnplMinimumAmount
-      ),
-    [productData?.priceAmount, productData?.price, bnplMinimumAmount]
-  );
+  const showBnplOption = true;
 
   const renderBnplPromoBox = () => {
     if (isShopMode || !showBnplOption) return null;
@@ -634,7 +623,11 @@ const ProductBundle = () => {
         return;
       }
       if (e?.response?.status === 401) {
-        return alert("Please log in to continue.");
+        const returnUrl = cartToken
+          ? `/bnpl?token=${cartToken}&bundleId=${id}&step=6.5&fromBundle=true`
+          : `/bnpl?bundleId=${id}&step=6.5&fromBundle=true`;
+        navigate(loginPathWithReturn(returnUrl));
+        return;
       }
       alert(
         e?.response?.data?.message || e?.message || "Failed to add to cart."
@@ -674,7 +667,11 @@ const ProductBundle = () => {
         return;
       }
       if (e?.response?.status === 401) {
-        return alert("Please log in to continue.");
+        const returnUrl = cartToken
+          ? `/buy-now?token=${cartToken}&bundleId=${id}&step=4&fromBundle=true`
+          : `/buy-now?bundleId=${id}&step=4&fromBundle=true`;
+        navigate(loginPathWithReturn(returnUrl));
+        return;
       }
       alert(
         e?.response?.data?.message || e?.message || "Failed to add to cart."

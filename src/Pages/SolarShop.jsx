@@ -10,6 +10,7 @@ import API from "../config/api.config";
 import { assets } from "../assets/data";
 import { apiFlagTrue } from "../utils/apiFlags";
 import { withShopSource } from "../utils/shopSource";
+import { storeVisibleCategories } from "../utils/storeVisibility";
 
 // ₦ formatter
 const formatNGN = (n) => {
@@ -126,7 +127,7 @@ const SolarShop = () => {
                         ...(token ? { Authorization: `Bearer ${token}` } : {}),
                     },
                 });
-                setCategories(Array.isArray(data?.data) ? data.data : []);
+                setCategories(storeVisibleCategories(Array.isArray(data?.data) ? data.data : []));
             } catch (err) {
                 if (err.response && err.response.status === 401) {
                     navigate('/login');

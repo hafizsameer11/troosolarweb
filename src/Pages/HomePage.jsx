@@ -20,6 +20,10 @@ import {
 } from "../utils/bundleSort";
 import { getBundleStoreCategoryLabel, normalizeBrandFilterSelection, catalogItemMatchesBrandFilter, itemMatchesStoreCategory } from "../utils/storeCatalog";
 import { withShopSource } from "../utils/shopSource";
+import {
+  storeVisibleCategories,
+  isCatalogItemHiddenFromStore,
+} from "../utils/storeVisibility";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
 
@@ -246,6 +250,7 @@ const HomePage = () => {
   const fromCart = searchParams.get("from") === "cart";
 
   const [categories, setCategories] = useState([]);
+  const [allStoreCategories, setAllStoreCategories] = useState([]);
   const [catLoading, setCatLoading] = useState(false);
   const [catError, setCatError] = useState("");
 
@@ -333,7 +338,9 @@ const HomePage = () => {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
-        setCategories(Array.isArray(data?.data) ? data.data : []);
+        const list = Array.isArray(data?.data) ? data.data : [];
+        setAllStoreCategories(list);
+        setCategories(storeVisibleCategories(list));
       } catch (err) {
         setCatError(
           err?.response?.data?.message ||
@@ -523,6 +530,9 @@ const HomePage = () => {
   // Apply size and price filters
   const filteredBySizeAndPrice = useMemo(() => {
     let items = isFiltering ? filteredResults : catalogItems;
+    items = items.filter(
+      (item) => !isCatalogItemHiddenFromStore(item, allStoreCategories)
+    );
 
     const rawProductMap = {};
     (rawProducts || []).forEach((raw) => {
@@ -610,6 +620,7 @@ const HomePage = () => {
     selectedBrandId,
     brandOptions,
     extractSizeFromTitle,
+    allStoreCategories,
   ]);
 
   const activeCategoryLabel = useMemo(() => {

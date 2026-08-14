@@ -1,11 +1,7 @@
-import React, { useContext, useState } from "react";
+import React, { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import axios from "axios";
-import { ContextApi } from "../Context/AppContext";
-import API from "../config/api.config";
 import { loginPathWithReturn } from "../utils/authRedirect";
 import ProductPromoBadges from "./ProductPromoBadges";
-import { withShopSource } from "../utils/shopSource";
 
 const SolarBundleComponent = ({
   id,
@@ -23,12 +19,9 @@ const SolarBundleComponent = ({
   isHotDeal = false,
   isRecommended = false,
 }) => {
-  const { fetchCartCount, showCartNotificationModal } = useContext(ContextApi);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [err, setErr] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -54,64 +47,27 @@ const SolarBundleComponent = ({
   const handleCardClick = (e) => {
     if (!e.target.closest("a") && !e.target.closest("button")) {
       if (id) {
-        const flow = new URLSearchParams(location.search || "").get("flow");
-        const detailPath = flow
-          ? `/productBundle/details/${id}${location.search || ""}`
-          : withShopSource(`/productBundle/details/${id}${location.search || ""}`);
+        const detailPath = `/productBundle/details/${id}${location.search || ""}`;
         navigate(detailPath);
       }
     }
   };
 
-  const handleAddToCart = async (e) => {
+  const handleBuyNow = (e) => {
     e?.preventDefault?.();
     e?.stopPropagation?.();
     if (!id) return;
 
     const token = localStorage.getItem("access_token");
     if (!token) {
-      navigate(loginPathWithReturn());
+      navigate(loginPathWithReturn(`/buy-now?bundleId=${id}&step=4&fromBundle=true`));
       return;
     }
 
-    try {
-      setErr("");
-      setAdding(true);
-      await axios.post(
-        API.CART,
-        {
-          itemable_type: "bundle",
-          itemable_id: Number(id),
-          quantity: 1,
-        },
-        {
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      fetchCartCount?.();
-      showCartNotificationModal?.(heading, imageUrl);
-    } catch (addErr) {
-      const msg =
-        addErr?.response?.data?.message ||
-        addErr?.message ||
-        "Failed to add to cart.";
-      setErr(msg);
-      if (addErr?.response?.status === 409) {
-        alert(msg);
-      }
-    } finally {
-      setAdding(false);
-    }
+    navigate(`/buy-now?bundleId=${id}&step=4&fromBundle=true`);
   };
 
-  const detailLink = (() => {
-    const flow = new URLSearchParams(location.search || "").get("flow");
-    const path = `/productBundle/details/${id}${location.search || ""}`;
-    return flow ? path : withShopSource(path);
-  })();
+  const detailLink = `/productBundle/details/${id}${location.search || ""}`;
   const inverterRatingText = (() => {
     if (inverterRating == null || inverterRating === "") return "";
     const raw = String(inverterRating).trim();
@@ -220,12 +176,11 @@ const SolarBundleComponent = ({
         </Link>
         <button
           type="button"
-          onClick={handleAddToCart}
-          disabled={!id || adding}
-          title={err || ""}
+          onClick={handleBuyNow}
+          disabled={!id}
           className="h-9 text-[10px] sm:text-[11px] rounded-full bg-[#273e8e] max-sm:text-[8px] max-sm:rounded-2xl max-sm:h-7 text-white flex items-center justify-center hover:bg-[#1a2b6b] transition-colors disabled:opacity-60"
         >
-          {adding ? "Adding…" : "Add to cart"}
+          Buy Now
         </button>
       </div>
     </div>

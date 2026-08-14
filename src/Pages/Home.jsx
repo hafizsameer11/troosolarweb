@@ -17,6 +17,7 @@ import Loading from "../Component/Loading";
 import { getSiteBanners } from "../utils/siteBanners";
 import { apiFlagTrue } from "../utils/apiFlags";
 import { withShopSource } from "../utils/shopSource";
+import { storeVisibleCategories } from "../utils/storeVisibility";
 
 /* ---------------- helpers ---------------- */
 
@@ -333,7 +334,7 @@ const Home = () => {
         const catList = Array.isArray(catRes?.data?.data)
           ? catRes.data.data
           : [];
-        setCategories(catList);
+        setCategories(storeVisibleCategories(catList));
       } catch { }
     })();
   }, []);

@@ -23,6 +23,7 @@ import {
 } from "../utils/bundleSort";
 import { isProductPriceSortCategory, isSolarInverterBatteryBundle, isInverterBatteryBundle } from "../utils/storeCatalog";
 import { withShopSource } from "../utils/shopSource";
+import { isCategoryShownOnStore, storeVisibleCategories } from "../utils/storeVisibility";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
 
@@ -270,7 +271,7 @@ const SpecificProduct = () => {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
-        setAllCategories(Array.isArray(data?.data) ? data.data : []);
+        setAllCategories(storeVisibleCategories(Array.isArray(data?.data) ? data.data : []));
       } catch {
         setAllCategories([]);
       } finally {
@@ -297,6 +298,13 @@ const SpecificProduct = () => {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         };
+
+        if (category && !isCategoryShownOnStore(category)) {
+          registerProducts([]);
+          setAllProducts([]);
+          setSpecificProduct([]);
+          return;
+        }
 
         if (bundleTypeForPage) {
           const typeEnc = encodeURIComponent(bundleTypeForPage);
@@ -364,6 +372,7 @@ const SpecificProduct = () => {
     id,
     // When slug is /product/25 or /product/26, category name is not needed; avoid refetch when category loads.
     String(id) === "25" || String(id) === "26" ? undefined : category,
+    category?.show_on_store,
   ]);
 
   // price filter
