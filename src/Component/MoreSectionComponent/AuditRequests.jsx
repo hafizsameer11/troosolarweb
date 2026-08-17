@@ -49,6 +49,10 @@ const labelCustomerType = (value) => {
 const labelAuditRequestChoice = (row) => {
   const customerType = labelCustomerType(row?.customer_type);
   const auditTarget = labelAuditType(row);
+  // Commercial customer + commercial audit is the same label — show once
+  if (row?.audit_type === "commercial") {
+    return auditTarget || "Commercial / Industrial";
+  }
   if (customerType && auditTarget && auditTarget !== "—") {
     return `${customerType} / ${auditTarget}`;
   }
@@ -65,6 +69,14 @@ const labelProductCategory = (value) => {
   if (v === "panels-only") return "Solar panels only";
   if (v === "audit") return "Professional energy audit";
   return String(value).replace(/-/g, " ");
+};
+
+/** BNPL commercial skips the solution picker; do not show inherited Buy Now full-kit. */
+const shouldShowAuditSolution = (row) => {
+  if (String(row?.source || "").toLowerCase() === "bnpl" && row?.audit_type === "commercial") {
+    return false;
+  }
+  return Boolean(labelProductCategory(row?.product_category));
 };
 
 const auditReceiptUrl = (row) => {
@@ -311,7 +323,7 @@ const AuditRequests = () => {
                       {labelAuditRequestChoice(row)}
                       {row.company_name ? ` · ${row.company_name}` : ""}
                     </p>
-                    {labelProductCategory(row.product_category) ? (
+                    {shouldShowAuditSolution(row) ? (
                       <p className="text-xs text-gray-500 mt-0.5 truncate">
                         {labelProductCategory(row.product_category)}
                       </p>
@@ -368,7 +380,7 @@ const AuditRequests = () => {
                           </dd>
                         </div>
                       ) : null}
-                      {labelProductCategory(row.product_category) ? (
+                      {shouldShowAuditSolution(row) ? (
                         <div className="sm:col-span-2">
                           <dt className="text-gray-500">Solution</dt>
                           <dd className="font-medium text-gray-900">
@@ -388,8 +400,7 @@ const AuditRequests = () => {
                           </dd>
                         </div>
                       )}
-                      {row.audit_type !== "commercial" &&
-                        row.is_gated_estate !== undefined &&
+                      {row.is_gated_estate !== undefined &&
                         row.is_gated_estate !== null && (
                         <div>
                           <dt className="text-gray-500">Gated estate</dt>

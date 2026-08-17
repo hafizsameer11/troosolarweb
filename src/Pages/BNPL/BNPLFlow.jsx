@@ -1301,7 +1301,8 @@ const BNPLFlow = () => {
                 optionType: 'audit',
                 auditType: 'commercial',
                 auditSubtype: '',
-                productCategory: prev.productCategory || 'full-kit',
+                // BNPL commercial skips the solution picker — do not inherit Buy Now full-kit default
+                productCategory: '',
             }));
             setStep(5); // Commercial/Industrial audit form — skip product category & method steps
             return;
@@ -1476,10 +1477,16 @@ const BNPLFlow = () => {
                 fullAddress = [formData.houseNo, formData.streetName].filter(Boolean).join(', ');
             }
 
+            const selectedSolution = isCommercial
+                ? undefined
+                : (formData.productCategory && formData.productCategory !== 'audit'
+                    ? formData.productCategory
+                    : undefined);
+
             const auditRequestPayload = {
                 audit_type: formData.auditType,
                 customer_type: formData.customerType,
-                product_category: formData.productCategory || undefined,
+                product_category: selectedSolution,
                 source: 'bnpl',
                 property_state: formData.state,
                 property_address: fullAddress || formData.address,
@@ -1490,7 +1497,7 @@ const BNPLFlow = () => {
                     : isOffice
                         ? (formData.officeSpaces ? Number(formData.officeSpaces) : null)
                         : (formData.rooms ? Number(formData.rooms) : null),
-                is_gated_estate: (isHome || isOffice) ? !!formData.isGatedEstate : false,
+                is_gated_estate: !!formData.isGatedEstate,
             };
 
             if (formData.auditType === 'home-office') {
@@ -1515,7 +1522,7 @@ const BNPLFlow = () => {
                 // Ignore parse errors and proceed with payload defaults.
             }
 
-            if ((isHome || isOffice) && formData.isGatedEstate) {
+            if (formData.isGatedEstate) {
                 auditRequestPayload.estate_name = formData.estateName;
                 auditRequestPayload.estate_address = formData.estateAddress;
             }
@@ -3079,6 +3086,7 @@ const BNPLFlow = () => {
             !formData.commercialAddress?.trim() ||
             !formData.landmark?.trim() ||
             !formData.facilityDescription?.trim() ||
+            (formData.isGatedEstate && (!formData.estateName || !formData.estateAddress)) ||
             !formData.preferredAuditDate ||
             !formData.preferredAuditTime;
 
@@ -3205,6 +3213,37 @@ const BNPLFlow = () => {
                                     onChange={(e) => setFormData({ ...formData, facilityDescription: e.target.value })}
                                 />
                             </div>
+                            <div className="mt-4">
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.isGatedEstate}
+                                        onChange={(e) => setFormData({ ...formData, isGatedEstate: e.target.checked })}
+                                        className="h-5 w-5 text-[#273e8e] focus:ring-[#273e8e] border-gray-300 rounded"
+                                    />
+                                    <span className="text-gray-700">Is this property in a gated estate?</span>
+                                </label>
+                            </div>
+                            {formData.isGatedEstate && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                    <input
+                                        type="text"
+                                        placeholder="Estate Name *"
+                                        required={formData.isGatedEstate}
+                                        className="p-3 border rounded-lg"
+                                        value={formData.estateName}
+                                        onChange={(e) => setFormData({ ...formData, estateName: e.target.value })}
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Estate Address *"
+                                        required={formData.isGatedEstate}
+                                        className="p-3 border rounded-lg"
+                                        value={formData.estateAddress}
+                                        onChange={(e) => setFormData({ ...formData, estateAddress: e.target.value })}
+                                    />
+                                </div>
+                            )}
                         </>
                     )}
 
