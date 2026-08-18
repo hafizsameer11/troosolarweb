@@ -19,6 +19,10 @@ import { filterBillableInvoiceFees } from '../../utils/invoiceFees';
 import { resolveFlowDeliveryFee } from '../../utils/categoryDeliveryFees';
 import { filterBundleCustomServicesByFlow, BUNDLE_CHECKOUT_FLOWS } from '../../utils/bundleOrderListFlow';
 import {
+    fetchBnplMinimumLoanAmount,
+    isBnplEligiblePrice,
+} from '../../utils/bnplEligibility';
+import {
     extractKvaFromBundle,
     sortBundlesByKvaAsc,
     sortBundlesFeaturedThenKvaAsc,
@@ -754,7 +758,15 @@ const BNPLFlow = () => {
             const bundle = response.data?.data ?? response.data?.data ?? response.data;
             if (bundle) {
                 const price = Number(bundle.discount_price || bundle.total_price || 0);
-                
+                const minAmount = await fetchBnplMinimumLoanAmount(token);
+                if (!isBnplEligiblePrice(price, minAmount)) {
+                    alert(
+                        `Buy Now, Pay Later is only available for bundles from ₦${Number(minAmount).toLocaleString()}. This bundle is ₦${Number(price).toLocaleString()}.`
+                    );
+                    setLoading(false);
+                    return;
+                }
+
                 // Set bundle in formData (with default quantity of 1)
                 setFormData(prev => ({
                     ...prev,

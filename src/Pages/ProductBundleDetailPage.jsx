@@ -15,6 +15,7 @@ import {
   BNPL_MIN_FALLBACK,
   BNPL_PROMO_COPY,
   fetchBnplMinimumLoanAmount,
+  isBnplEligiblePrice,
 } from "../utils/bnplEligibility";
 import { loginPathWithReturn } from "../utils/authRedirect";
 
@@ -420,7 +421,10 @@ const ProductBundle = () => {
     };
   }, []);
 
-  const showBnplOption = true;
+  const showBnplOption = useMemo(
+    () => isBnplEligiblePrice(productData?.priceAmount, bnplMinimumAmount),
+    [productData?.priceAmount, bnplMinimumAmount]
+  );
 
   const renderBnplPromoBox = () => {
     if (isShopMode || !showBnplOption) return null;
@@ -593,6 +597,12 @@ const ProductBundle = () => {
   }, [id]);
 
   const handleBuyNowPayLater = async () => {
+    if (!isBnplEligiblePrice(productData?.priceAmount, bnplMinimumAmount)) {
+      alert(
+        `${BNPL_BUTTON_LABEL} is only available for bundles from ₦${Number(bnplMinimumAmount).toLocaleString()}. This bundle is ₦${Number(productData?.priceAmount || 0).toLocaleString()}.`
+      );
+      return;
+    }
     const token = localStorage.getItem("access_token");
     
     try {
