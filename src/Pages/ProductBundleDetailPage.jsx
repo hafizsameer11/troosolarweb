@@ -10,6 +10,7 @@ import { ChevronLeft, ShoppingCart } from "lucide-react"; // ← chevron back
 import Loading from "../Component/Loading";
 import ProductPromoBadges from "../Component/ProductPromoBadges";
 import { ContextApi } from "../Context/AppContext";
+import { bundleBnplPrice } from "../utils/bundlePricing";
 import {
   BNPL_BUTTON_LABEL,
   BNPL_MIN_FALLBACK,
@@ -277,6 +278,11 @@ const mapBundleDetail = (b) => {
     fees,
     price,
     priceAmount,
+    bnpl_price: toNumber(b.bnpl_price),
+    buy_now_price: toNumber(b.buy_now_price) || priceAmount,
+    effective_bnpl_price: toNumber(b.effective_bnpl_price) || toNumber(b.bnpl_price) || priceAmount,
+    total_price: total,
+    discount_price: discount,
     oldPrice,
     discount: discountBadge,
     heroImage: image,
@@ -422,8 +428,8 @@ const ProductBundle = () => {
   }, []);
 
   const showBnplOption = useMemo(
-    () => isBnplEligiblePrice(productData?.priceAmount, bnplMinimumAmount),
-    [productData?.priceAmount, bnplMinimumAmount]
+    () => isBnplEligiblePrice(bundleBnplPrice(productData), bnplMinimumAmount),
+    [productData, bnplMinimumAmount]
   );
 
   const renderBnplPromoBox = () => {
@@ -597,9 +603,9 @@ const ProductBundle = () => {
   }, [id]);
 
   const handleBuyNowPayLater = async () => {
-    if (!isBnplEligiblePrice(productData?.priceAmount, bnplMinimumAmount)) {
+    if (!isBnplEligiblePrice(bundleBnplPrice(productData), bnplMinimumAmount)) {
       alert(
-        `${BNPL_BUTTON_LABEL} is only available for bundles from ₦${Number(bnplMinimumAmount).toLocaleString()}. This bundle is ₦${Number(productData?.priceAmount || 0).toLocaleString()}.`
+        `${BNPL_BUTTON_LABEL} is only available for bundles from ₦${Number(bnplMinimumAmount).toLocaleString()}. This bundle is ₦${Number(bundleBnplPrice(productData) || 0).toLocaleString()}.`
       );
       return;
     }

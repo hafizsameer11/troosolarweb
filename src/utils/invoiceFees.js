@@ -24,6 +24,18 @@ export const filterBillableInvoiceFees = (rows) =>
     (r) => Number(r.rate) > 0 && !isLegacyDefaultInvoiceFee(r.description, r.rate)
   );
 
+/** Keep one row per fee kind when admin has duplicate invoice fee entries. */
+export const dedupeFeeRowsByKind = (rows) => {
+  const kept = new Set();
+  return (rows || []).filter((r) => {
+    const kind = classifyInvoiceFeeKind(r.description);
+    if (!kind) return true;
+    if (kept.has(kind)) return false;
+    kept.add(kind);
+    return true;
+  });
+};
+
 /**
  * Map one admin invoice-fee row to a single category.
  * Material is checked before installation so "Installation Material Fee" is material only.

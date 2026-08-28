@@ -853,7 +853,16 @@ const BuyNowFlow = () => {
                         const qty = Math.max(1, Number(item.quantity || 1));
                         const sub = Number(item.subtotal) || 0;
                         const unit = Number(item.unit_price) || 0;
-                        const unitPrice = sub > 0 ? sub / qty : unit;
+                        let unitPrice = sub > 0 ? sub / qty : unit;
+                        // Heal custom-order snapshots that stored 0 when discount_price was 0
+                        if (unitPrice <= 0 && item.itemable) {
+                            const discount = Number(item.itemable.discount_price ?? 0);
+                            const base =
+                                item.type === 'bundle'
+                                    ? Number(item.itemable.total_price || 0)
+                                    : Number(item.itemable.price || 0);
+                            unitPrice = discount > 0 ? discount : base;
+                        }
                         if (item.type === 'product' && item.itemable) {
                             products.push({
                                 id: item.itemable_id,

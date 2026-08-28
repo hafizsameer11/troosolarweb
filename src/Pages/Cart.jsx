@@ -405,7 +405,7 @@ const Cart = () => {
           const returnPath =
             orderType === "buy_now"
               ? `/buy-now?token=${encodeURIComponent(accessToken)}&type=buy_now&step=4`
-              : `/cart?token=${encodeURIComponent(accessToken)}&type=${encodeURIComponent(orderType)}`;
+              : `/bnpl?token=${encodeURIComponent(accessToken)}&type=bnpl`;
           navigate(loginPathWithReturn(returnPath), { replace: true });
           return;
         }
@@ -1304,6 +1304,21 @@ const Cart = () => {
   /* =========================
      DESKTOP (unchanged UI)
      ========================= */
+  const cartAccessToken = searchParams.get("token");
+  const cartAccessType = searchParams.get("type");
+  const isCartAccessRedirect =
+    Boolean(cartAccessToken) &&
+    (cartAccessType === "buy_now" || cartAccessType === "bnpl") &&
+    !err;
+
+  if (isCartAccessRedirect && loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F7FF]">
+        <p className="text-[#273e8e] font-medium">Loading your order…</p>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* DESKTOP — keep your existing layout exactly (sm+ only) */}

@@ -15,7 +15,7 @@ import { persistSessionFromCartAccess } from '../../utils/cartAccessAuth';
 import ProductPromoBadges from '../../Component/ProductPromoBadges';
 import GridPagination from '../../Component/GridPagination';
 import ProductCategoryGrid from '../../Component/ProductCategoryGrid';
-import { filterBillableInvoiceFees } from '../../utils/invoiceFees';
+import { filterBillableInvoiceFees, dedupeFeeRowsByKind } from '../../utils/invoiceFees';
 import { resolveFlowDeliveryFee } from '../../utils/categoryDeliveryFees';
 import { filterBundleCustomServicesByFlow, BUNDLE_CHECKOUT_FLOWS } from '../../utils/bundleOrderListFlow';
 import {
@@ -31,6 +31,7 @@ import {
     entityTopDeal,
     entityHighlyRecommended,
 } from '../../utils/bundleSort';
+import { bundleBnplPrice } from '../../utils/bundlePricing';
 
 const BUNDLE_STEP_GRID_PAGE_SIZE = 9;
 
@@ -566,7 +567,7 @@ const BNPLFlow = () => {
     const bundlesMeetingMinLoan = useMemo(() => {
         if (bnplMinimumLoanAmount <= 0) return bundles;
         return bundles.filter((bundle) => {
-            const bundlePrice = Number(bundle?.discount_price || bundle?.total_price || 0);
+            const bundlePrice = bundleBnplPrice(bundle);
             return bundlePrice >= bnplMinimumLoanAmount;
         });
     }, [bundles, bnplMinimumLoanAmount]);
@@ -757,7 +758,7 @@ const BNPLFlow = () => {
             });
             const bundle = response.data?.data ?? response.data?.data ?? response.data;
             if (bundle) {
-                const price = Number(bundle.discount_price || bundle.total_price || 0);
+                const price = bundleBnplPrice(bundle);
                 const minAmount = await fetchBnplMinimumLoanAmount(token);
                 if (!isBnplEligiblePrice(price, minAmount)) {
                     alert(
@@ -903,7 +904,10 @@ const BNPLFlow = () => {
                 if (cartData.requires_login) {
                     localStorage.removeItem('access_token');
                     localStorage.removeItem('user');
-                    const returnUrl = `/cart?token=${encodeURIComponent(token)}&type=${encodeURIComponent(orderType)}`;
+                    const returnUrl =
+                        orderType === "buy_now"
+                            ? `/buy-now?token=${encodeURIComponent(token)}&type=${encodeURIComponent(orderType)}&step=4`
+                            : `/bnpl?token=${encodeURIComponent(token)}&type=${encodeURIComponent(orderType)}`;
                     navigate(loginPathWithReturn(returnUrl));
                     return;
                 }
@@ -920,7 +924,20 @@ const BNPLFlow = () => {
                         const qty = Math.max(1, Number(item.quantity || 1));
                         const sub = Number(item.subtotal) || 0;
                         const unit = Number(item.unit_price) || 0;
-                        const unitPrice = sub > 0 ? sub / qty : unit;
+                        let unitPrice = sub > 0 ? sub / qty : unit;
+                        // Heal custom-order snapshots that stored 0 when discount_price was 0
+                        if (unitPrice <= 0 && item.itemable) {
+                            const discount = Number(
+                                item.itemable.discount_price ?? 0
+                            );
+                            const base =
+                                item.type === 'bundle'
+                                    ? bundleBnplPrice(item.itemable)
+                                    : Number(item.itemable.price || 0);
+                            unitPrice = item.type === 'bundle'
+                                ? base
+                                : (discount > 0 ? discount : base);
+                        }
                         if (item.type === 'product' && item.itemable) {
                             products.push({
                                 id: item.itemable_id,
@@ -1629,7 +1646,7 @@ const BNPLFlow = () => {
     };
 
     const handleBundleSelect = (bundle) => {
-        const price = Number(bundle.discount_price || bundle.total_price || 0);
+        const price = bundleBnplPrice(bundle);
         const isAlreadySelected = formData.selectedBundles.some(b => b.id === bundle.id);
         setFormData(prev => {
             // Check if bundle is already selected
@@ -1737,6 +1754,19 @@ const BNPLFlow = () => {
     const privacyPolicyUrl = 'https://troosolar.io/privacy-policy/';
     const termsOfServiceUrl = 'https://troosolar.io/terms-of-service/';
 
+    const defaultTermsGate = {
+        title: 'Terms of Use Agreement',
+        subtitle: 'Accept the terms of service and privacy policy to continue',
+        checkbox_prefix: 'I accept the',
+        terms_label: 'Terms Of Service',
+        privacy_label: 'Privacy Policy',
+        proceed_label: 'Proceed',
+        terms_url: termsOfServiceUrl,
+        privacy_url: privacyPolicyUrl,
+    };
+
+    const termsGate = { ...defaultTermsGate, ...(loanConfig?.terms_gate || {}) };
+
     const renderTermsGate = () => (
         <div className="min-h-screen bg-gray-50 flex flex-col">
             <div className="bg-white shadow-sm p-4 sticky top-0 z-50">
@@ -1748,8 +1778,8 @@ const BNPLFlow = () => {
             <div className="flex-grow flex items-center justify-center p-6">
                 <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
                     <div className="px-6 pt-6 pb-2 flex-shrink-0">
-                        <p className="text-center text-xl font-semibold text-[#273e8e]">Terms of Use Agreement</p>
-                        <p className="text-gray-600 text-sm text-center mt-2">Accept the terms of service and privacy policy to continue</p>
+                        <p className="text-center text-xl font-semibold text-[#273e8e]">{termsGate.title}</p>
+                        <p className="text-gray-600 text-sm text-center mt-2">{termsGate.subtitle}</p>
                     </div>
                     <div className="px-6 py-4 flex-shrink-0 space-y-4">
                         <label className="flex items-start gap-3 font-medium cursor-pointer text-sm">
@@ -1760,23 +1790,23 @@ const BNPLFlow = () => {
                                 className="h-4 w-4 mt-0.5 text-[#273e8e] focus:ring-[#273e8e] border-gray-300 rounded flex-shrink-0"
                             />
                             <span>
-                                I accept the{" "}
+                                {termsGate.checkbox_prefix}{" "}
                                 <a
-                                    href={termsOfServiceUrl}
+                                    href={termsGate.terms_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-[#273e8e] underline hover:text-[#1d2f6b]"
                                 >
-                                    Terms Of Service
+                                    {termsGate.terms_label}
                                 </a>
                                 {" "} & {" "}
                                 <a
-                                    href={privacyPolicyUrl}
+                                    href={termsGate.privacy_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-[#273e8e] underline hover:text-[#1d2f6b]"
                                 >
-                                    Privacy Policy
+                                    {termsGate.privacy_label}
                                 </a>
                             </span>
                         </label>
@@ -1785,7 +1815,7 @@ const BNPLFlow = () => {
                             disabled={!bnplTermsCheckbox}
                             className={`w-full py-3 rounded-full font-medium transition-colors ${bnplTermsCheckbox ? 'bg-[#273e8e] text-white hover:bg-[#1d2f6b]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
                         >
-                            Proceed
+                            {termsGate.proceed_label}
                         </button>
                     </div>
                 </div>
@@ -2374,7 +2404,7 @@ const BNPLFlow = () => {
                     <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
                         {paginatedBundles.map((bundle) => {
-                            const price = Number(bundle.discount_price || bundle.total_price || 0);
+                            const price = bundleBnplPrice(bundle);
                             const oldPrice = bundle.discount_price && bundle.total_price && bundle.discount_price < bundle.total_price 
                                 ? Number(bundle.total_price) 
                                 : null;
@@ -2593,7 +2623,7 @@ const BNPLFlow = () => {
         }
 
         const bundle = selectedBundleDetails;
-        const totalPrice = Number(bundle.discount_price || bundle.total_price || 0);
+        const totalPrice = bundleBnplPrice(bundle);
         const oldPrice = bundle.discount_price && bundle.total_price && bundle.discount_price < bundle.total_price
             ? Number(bundle.total_price)
             : null;
@@ -3593,12 +3623,28 @@ const BNPLFlow = () => {
 
     const extractBundleLineItems = (bundle) => {
         const toNumber = (v) => typeof v === 'number' ? v : Number(String(v ?? '').replace(/[^\d.]/g, '')) || 0;
+        const parseFeeVisibility = (title) => {
+            const s = String(title || '');
+            if (s.startsWith(FEE_VIS_TROO_PREFIX)) return 'troosolar';
+            if (s.startsWith(FEE_VIS_OWN_PREFIX)) return 'own';
+            if (s.startsWith(FEE_VIS_BOTH_PREFIX)) return 'both';
+            const lower = s.toLowerCase();
+            if (lower.includes('material')) return 'own';
+            if (lower.includes('installation fee') || lower.includes('inspection fee')) return 'troosolar';
+            if (lower.includes('delivery fee') || lower.includes('delivery/logistics')) return 'both';
+            return 'both';
+        };
         const stripFeeVisibilityPrefix = (title) => {
             const t = String(title || '');
             if (t.startsWith(FEE_VIS_TROO_PREFIX)) return t.slice(FEE_VIS_TROO_PREFIX.length).trim();
             if (t.startsWith(FEE_VIS_OWN_PREFIX)) return t.slice(FEE_VIS_OWN_PREFIX.length).trim();
             if (t.startsWith(FEE_VIS_BOTH_PREFIX)) return t.slice(FEE_VIS_BOTH_PREFIX.length).trim();
             return t;
+        };
+        const feeVisibleForInstaller = (visibility, installerChoice) => {
+            if (visibility === 'troosolar') return installerChoice !== 'own';
+            if (visibility === 'own') return installerChoice === 'own';
+            return true;
         };
         const parseQuantityApplies = (value) => {
             if (value === undefined || value === null || value === '') return true;
@@ -3716,32 +3762,54 @@ const BNPLFlow = () => {
             if (t.startsWith(OL_PREFIX)) return t.slice(OL_PREFIX.length).trim();
             return t;
         };
+        const parseOrderItemVisibility = (title) => {
+            const s = String(title || '');
+            if (s.startsWith(OL_VIS_TROO_PREFIX)) return 'troosolar';
+            if (s.startsWith(OL_VIS_OWN_PREFIX)) return 'own';
+            const clean = stripOrderItemPrefix(s).toLowerCase();
+            if (clean.includes('installation material')) return 'own';
+            return 'both';
+        };
+        const orderItemVisibleForInstaller = (visibility, installerChoice) => {
+            if (visibility === 'troosolar') return installerChoice !== 'own';
+            if (visibility === 'own') return installerChoice === 'own';
+            return true;
+        };
+        // BNPL financed installs use TrooSolar installer unless own-installer is added later.
+        const installerChoice = 'troosolar';
         relServices.forEach((s) => {
             const rawTitle = s?.title || 'Custom Service';
             if (rawTitle.startsWith(OL_PREFIX) || rawTitle.startsWith(OL_VIS_TROO_PREFIX) || rawTitle.startsWith(OL_VIS_OWN_PREFIX)) {
                 const cleanTitle = stripOrderItemPrefix(rawTitle);
+                const visibility = parseOrderItemVisibility(rawTitle);
                 const qtyMeta = resolveQtyAndUnit([s], 1, 'Nos');
-                customOrderItems.push({
-                    description: cleanTitle,
-                    quantity: qtyMeta.quantity,
-                    unit: qtyMeta.unit,
-                    quantityApplies: qtyMeta.quantityApplies,
-                    rate: toNumber(s?.service_amount),
-                });
+                if (orderItemVisibleForInstaller(visibility, installerChoice)) {
+                    customOrderItems.push({
+                        description: cleanTitle,
+                        quantity: qtyMeta.quantity,
+                        unit: qtyMeta.unit,
+                        quantityApplies: qtyMeta.quantityApplies,
+                        rate: toNumber(s?.service_amount),
+                    });
+                }
             } else {
-                const qtyMeta = resolveQtyAndUnit([s], 1, /inspection/i.test(rawTitle) ? 'Lots' : 'Nos');
-                serviceRows.push({
-                    description: stripFeeVisibilityPrefix(rawTitle),
-                    quantity: qtyMeta.quantity,
-                    unit: qtyMeta.unit,
-                    quantityApplies: qtyMeta.quantityApplies,
-                    rate: toNumber(s?.service_amount),
-                });
+                const cleanTitle = stripFeeVisibilityPrefix(rawTitle);
+                const visibility = parseFeeVisibility(rawTitle);
+                const qtyMeta = resolveQtyAndUnit([s], 1, /inspection/i.test(cleanTitle) ? 'Lots' : 'Nos');
+                if (feeVisibleForInstaller(visibility, installerChoice)) {
+                    serviceRows.push({
+                        description: cleanTitle,
+                        quantity: qtyMeta.quantity,
+                        unit: qtyMeta.unit,
+                        quantityApplies: qtyMeta.quantityApplies,
+                        rate: toNumber(s?.service_amount),
+                    });
+                }
             }
         });
 
         // Invoice fees come only from admin-configured custom_services (never material fallbacks).
-        const billableServiceRows = filterBillableInvoiceFees(serviceRows);
+        const billableServiceRows = filterBillableInvoiceFees(dedupeFeeRowsByKind(serviceRows));
 
         // Build the flat items list for ORDER LIST
         // If admin has set [OL] custom order items, use those instead of bundle_items products
