@@ -31,7 +31,7 @@ import {
     entityTopDeal,
     entityHighlyRecommended,
 } from '../../utils/bundleSort';
-import { bundleBnplPrice } from '../../utils/bundlePricing';
+import { bundleBnplPrice, bundleBnplDisplay } from '../../utils/bundlePricing';
 
 const BUNDLE_STEP_GRID_PAGE_SIZE = 9;
 
@@ -2404,13 +2404,7 @@ const BNPLFlow = () => {
                     <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
                         {paginatedBundles.map((bundle) => {
-                            const price = bundleBnplPrice(bundle);
-                            const oldPrice = bundle.discount_price && bundle.total_price && bundle.discount_price < bundle.total_price 
-                                ? Number(bundle.total_price) 
-                                : null;
-                            const discount = oldPrice && price < oldPrice
-                                ? Math.round(((oldPrice - price) / oldPrice) * 100)
-                                : 0;
+                            const { price, oldPrice, discount } = bundleBnplDisplay(bundle);
                             
                             // Check if bundle is selected
                             const isSelected = formData.selectedBundles.some(b => b.id === bundle.id);
@@ -2623,13 +2617,7 @@ const BNPLFlow = () => {
         }
 
         const bundle = selectedBundleDetails;
-        const totalPrice = bundleBnplPrice(bundle);
-        const oldPrice = bundle.discount_price && bundle.total_price && bundle.discount_price < bundle.total_price
-            ? Number(bundle.total_price)
-            : null;
-        const discount = oldPrice && totalPrice < oldPrice
-            ? Math.round(((oldPrice - totalPrice) / oldPrice) * 100)
-            : 0;
+        const { price: totalPrice, oldPrice, discount } = bundleBnplDisplay(bundle);
 
         // Get items included
         const itemsIncluded = bundle.materials || bundle.bundleItems || bundle.bundle_items || [];

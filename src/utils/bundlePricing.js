@@ -22,3 +22,24 @@ export function bundleBnplPrice(bundle) {
   if (bnpl > 0) return bnpl;
   return bundleBuyNowPrice(bundle);
 }
+
+export function bundleListPrice(bundle) {
+  return Number(bundle?.total_price ?? 0);
+}
+
+export function bundleBuyNowDisplay(bundle) {
+  const list = bundleListPrice(bundle);
+  const price = bundleBuyNowPrice(bundle);
+  const oldPrice = list > 0 && price < list ? list : null;
+  const discount = oldPrice ? Math.round(((list - price) / list) * 100) : 0;
+  return { price, oldPrice, discount };
+}
+
+/** BNPL card/detail pricing — compares BNPL price to list price, not Buy Now sale. */
+export function bundleBnplDisplay(bundle) {
+  const list = bundleListPrice(bundle);
+  const price = bundleBnplPrice(bundle);
+  const oldPrice = list > 0 && price < list ? list : null;
+  const discount = oldPrice ? Math.round(((list - price) / list) * 100) : 0;
+  return { price, oldPrice, discount };
+}
