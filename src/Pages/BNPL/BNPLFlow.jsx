@@ -1698,7 +1698,7 @@ const BNPLFlow = () => {
 
     const handleLoanConfirm = (loanDetails) => {
         setFormData({ ...formData, loanDetails });
-        setStep(9); // Customer decides to proceed (NEW STEP)
+        setStep(8.5); // Financing Path before Review Loan Plan
     };
 
     const handleBundleSelect = (bundle) => {
@@ -4840,7 +4840,7 @@ const BNPLFlow = () => {
 
     const renderStep9 = () => (
         <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-            <button onClick={() => setStep(8)} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
+            <button onClick={() => setStep(8.5)} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
                 <ArrowLeft size={16} className="mr-2" /> Back
             </button>
             <h2 className="text-2xl font-bold mb-6 text-[#273e8e]">Review Your Loan Plan</h2>
@@ -4942,7 +4942,7 @@ const BNPLFlow = () => {
                                 },
                             }
                         }));
-                        setStep(9.5);
+                        setStep(11);
                     }}
                     className="flex-1 bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
                 >
@@ -6021,14 +6021,14 @@ const BNPLFlow = () => {
         }
     };
 
-    const renderStep9_5 = () => (
+    const renderStep8_5 = () => (
         <BnplFinancingPathStep
             formData={formData}
             setFormData={setFormData}
             financingPartners={financingPartners}
             loadingPartners={loadingFinancingPartners}
-            onBack={() => setStep(9)}
-            onContinue={() => setStep(11)}
+            onBack={() => setStep(8)}
+            onContinue={() => setStep(9)}
         />
     );
 
@@ -6037,7 +6037,7 @@ const BNPLFlow = () => {
             formData={formData}
             setFormData={setFormData}
             states={states}
-            onBack={() => setStep(9.5)}
+            onBack={() => setStep(9)}
             onContinue={() => setStep(10)}
             isValidSocialMediaIdentity={isValidSocialMediaIdentity}
             getSocialMediaVerificationUrl={getSocialMediaVerificationUrl}
@@ -7011,7 +7011,7 @@ const BNPLFlow = () => {
                             {step === 7 && renderStep7()}
                             {step === 7.5 && renderStep7_5()}
                             {step === 8 && renderStep8()}
-                            {step === 9.5 && renderStep9_5()}
+                            {step === 8.5 && renderStep8_5()}
                             {step === 10 && renderStep10()}
                             {step === 11 && renderStep11()}
                             {step === 12 && renderStep12()}

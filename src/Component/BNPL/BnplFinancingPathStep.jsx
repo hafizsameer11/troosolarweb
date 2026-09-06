@@ -47,7 +47,7 @@ const BnplFinancingPathStep = ({
       </button>
       <h2 className="text-2xl font-bold mb-2 text-[#273e8e]">Financing Path</h2>
       <p className="text-sm text-gray-600 mb-6">
-        Choose how you want to finance this order before completing your application.
+        Choose how you want to finance this order before reviewing your loan plan.
         Only options activated in Settings are listed. Partner financiers return a decision in 24–72 hours
         after credit-check payment; Troosolar continues the full BNPL process flow.
       </p>
@@ -102,7 +102,7 @@ const BnplFinancingPathStep = ({
             : 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
         }`}
       >
-        Continue to Final Application
+        Continue to Review Loan Plan
       </button>
     </div>
   );
