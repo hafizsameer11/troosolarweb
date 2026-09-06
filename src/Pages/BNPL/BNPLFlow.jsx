@@ -33,6 +33,7 @@ import {
 } from '../../utils/bundleSort';
 import { bundleBnplPrice, bundleBnplDisplay } from '../../utils/bundlePricing';
 import BnplFinalApplicationForm from '../../Component/BNPL/BnplFinalApplicationForm';
+import BnplFinancingPathStep from '../../Component/BNPL/BnplFinancingPathStep';
 
 const BUNDLE_STEP_GRID_PAGE_SIZE = 9;
 
@@ -4859,14 +4860,7 @@ const BNPLFlow = () => {
                                 <span>₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(snapshot.totalLoanAmount || 0)}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span>
-                                    3. Total Interest Amount
-                                    {snapshot.interestRate != null && snapshot.tenor
-                                        ? ` (${snapshot.interestRate}% × ${snapshot.tenor} mo)`
-                                        : snapshot.interestRate != null
-                                        ? ` (${snapshot.interestRate}% of loan)`
-                                        : ''}
-                                </span>
+                                <span>3. Total Interest Amount</span>
                                 <span>₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(snapshot.totalInterestAmount || 0)}</span>
                             </div>
                             <div className="flex justify-between">
@@ -4948,7 +4942,7 @@ const BNPLFlow = () => {
                                 },
                             }
                         }));
-                        setStep(11);
+                        setStep(9.5);
                     }}
                     className="flex-1 bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
                 >
@@ -6027,14 +6021,23 @@ const BNPLFlow = () => {
         }
     };
 
+    const renderStep9_5 = () => (
+        <BnplFinancingPathStep
+            formData={formData}
+            setFormData={setFormData}
+            financingPartners={financingPartners}
+            loadingPartners={loadingFinancingPartners}
+            onBack={() => setStep(9)}
+            onContinue={() => setStep(11)}
+        />
+    );
+
     const renderStep11 = () => (
         <BnplFinalApplicationForm
             formData={formData}
             setFormData={setFormData}
             states={states}
-            financingPartners={financingPartners}
-            loadingPartners={loadingFinancingPartners}
-            onBack={() => setStep(9)}
+            onBack={() => setStep(9.5)}
             onContinue={() => setStep(10)}
             isValidSocialMediaIdentity={isValidSocialMediaIdentity}
             getSocialMediaVerificationUrl={getSocialMediaVerificationUrl}
@@ -7008,6 +7011,7 @@ const BNPLFlow = () => {
                             {step === 7 && renderStep7()}
                             {step === 7.5 && renderStep7_5()}
                             {step === 8 && renderStep8()}
+                            {step === 9.5 && renderStep9_5()}
                             {step === 10 && renderStep10()}
                             {step === 11 && renderStep11()}
                             {step === 12 && renderStep12()}

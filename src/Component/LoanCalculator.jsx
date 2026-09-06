@@ -154,7 +154,7 @@ const LoanCalculator = ({
         { label: 'Total Amount', value: formatPlain(grandTotal) },
         { label: 'Initial Deposit', value: `−${formatPlain(depositAmount)}`, accent: 'red' },
         { label: 'Total Loan Amount', value: formatPlain(principal) },
-        { label: `Total Interest Amount (${interestRate}% × ${tenor} mo)`, value: formatPlain(totalInterest), accent: 'orange' },
+        { label: 'Total Interest Amount', value: formatPlain(totalInterest), accent: 'orange' },
         { label: 'Total Repayment Amount', value: formatPlain(totalRepayment), bold: true },
         { label: `Monthly Repayment Amount (${tenor} months)`, value: formatPlain(monthlyRepayment), bold: true, highlight: true, hero: true },
       ];
@@ -169,7 +169,7 @@ const LoanCalculator = ({
       { label: 'Total loan amount', value: formatPlain(principal) },
       { label: 'Upfront Payment (Initial Deposit + Administrative Fees)', value: formatPlain(upfrontDue), bold: true, highlight: true },
       { section: 'repayment' },
-      { label: `Total interest (${interestRate}% × ${tenor} mo)`, value: formatPlain(totalInterest) },
+      { label: 'Total interest', value: formatPlain(totalInterest) },
       { label: 'Total repayment amount', value: formatPlain(totalRepayment), bold: true },
       { label: `Monthly repayment (${tenor} months)`, value: formatPlain(monthlyRepayment), bold: true, highlight: true, hero: true },
       { section: 'fees' },
@@ -290,7 +290,6 @@ const LoanCalculator = ({
         <div class="chips">
           <span class="chip">Initial deposit: ${depositLabel}</span>
           <span class="chip">Tenor: ${tenorLabel}</span>
-          <span class="chip">Interest: ${interestRate}% / month</span>
         </div>
         <table>${tableRows}</table>
         <p class="footer">
@@ -400,18 +399,7 @@ const LoanCalculator = ({
                 <p className="text-[#273e8e] font-bold mt-2 text-lg">{formatCurrency(depositAmount)}</p>
               </div>
 
-              {!isStandalone && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Interest Rate (% of loan amount)
-                  </label>
-                  <div className="inline-flex">
-                    <span className="py-2 px-4 rounded-lg text-sm font-medium bg-[#273e8e] text-white">
-                      {interestRate}%
-                    </span>
-                  </div>
-                </div>
-              )}
+              {/* Interest rate is applied in calculation but not shown on the BNPL first calculator (client request). */}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -472,7 +460,7 @@ const LoanCalculator = ({
                     <span className="font-medium">{formatCurrency(principal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Total Interest Amount ({interestRate}% × {tenor} mo)</span>
+                    <span className="text-gray-500">Total Interest Amount</span>
                     <span className="font-medium text-orange-600">{formatCurrency(totalInterest)}</span>
                   </div>
                   <div className="flex justify-between text-sm pt-2 border-t">
@@ -516,7 +504,7 @@ const LoanCalculator = ({
               </div>
 
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Total interest ({interestRate}% × {tenor} mo)</span>
+                <span className="text-gray-500">Total interest</span>
                 <span className="font-medium">{formatCurrency(totalInterest)}</span>
               </div>
               <div className="flex justify-between text-sm pt-2 border-t">

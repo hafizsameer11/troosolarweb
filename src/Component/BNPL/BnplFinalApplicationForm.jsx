@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
 import {
   financeAgreementTextForType,
@@ -12,14 +12,13 @@ const fieldClass = 'p-3 border rounded-lg w-full';
 const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
 
 /**
- * BNPL Final Application — residential vs SME field sets + Finance Agreement + financing path.
+ * BNPL Final Application — residential vs SME field sets + Finance Agreement.
+ * Financing Path is selected on the previous step (before this form).
  */
 const BnplFinalApplicationForm = ({
   formData,
   setFormData,
   states = [],
-  financingPartners = [],
-  loadingPartners = false,
   onBack,
   onContinue,
   isValidSocialMediaIdentity,
@@ -30,23 +29,6 @@ const BnplFinalApplicationForm = ({
   const agreementText = financeAgreementTextForType(formData.customerType);
 
   const set = (patch) => setFormData((prev) => ({ ...prev, ...patch }));
-
-  useEffect(() => {
-    if (!financingPartners.length) return;
-    const selected = financingPartners.find((p) => Number(p.id) === Number(formData.financingPartnerId));
-    if (selected) return;
-    const troo = financingPartners.find((p) => p.is_troosolar || String(p.slug || '').toLowerCase() === 'troosolar');
-    const fallback = troo || financingPartners[0];
-    if (fallback) {
-      set({
-        financingPartnerId: Number(fallback.id),
-        financingPath: (fallback.is_troosolar || String(fallback.slug || '').toLowerCase() === 'troosolar')
-          ? 'troosolar'
-          : 'partner',
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [financingPartners]);
 
   const validate = () => {
     const requiredPersonal = [
@@ -116,10 +98,6 @@ const BnplFinalApplicationForm = ({
     }
     if (!formData.financeAgreementAccepted) {
       alert('Please accept the Finance Agreement to continue.');
-      return false;
-    }
-    if (!formData.financingPartnerId) {
-      alert('Please select a financing option from the list.');
       return false;
     }
     return true;
@@ -457,54 +435,6 @@ const BnplFinalApplicationForm = ({
               </button>
             </span>
           </label>
-        </section>
-
-        {/* Financing path — options come from Admin Settings → Financing Partner (Active only, including Troosolar) */}
-        <section>
-          <h3 className="text-lg font-bold mb-2 text-gray-800 border-b pb-2">Financing Path</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Choose how you want to finance this order. Only options activated in Settings are listed.
-            Partner financiers return a decision in 24–72 hours after credit-check payment; Troosolar continues the full BNPL process flow.
-          </p>
-          {loadingPartners ? (
-            <p className="text-sm text-gray-500">Loading financing options…</p>
-          ) : financingPartners.length === 0 ? (
-            <p className="text-sm text-amber-700">
-              No financing options are currently active. Please ask support to activate Troosolar or a partner under Settings → Financing Partner.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {financingPartners.map((p) => {
-                const isTroo = !!(p.is_troosolar || String(p.slug || '').toLowerCase() === 'troosolar');
-                const selected = Number(formData.financingPartnerId) === Number(p.id);
-                return (
-                  <label
-                    key={p.id}
-                    className={`flex items-start gap-3 p-4 border-2 rounded-xl cursor-pointer ${selected ? 'border-[#273e8e] bg-blue-50' : 'border-gray-200'}`}
-                  >
-                    <input
-                      type="radio"
-                      name="financingPartnerId"
-                      checked={selected}
-                      onChange={() => set({
-                        financingPartnerId: Number(p.id),
-                        financingPath: isTroo ? 'troosolar' : 'partner',
-                      })}
-                      className="mt-1"
-                    />
-                    <div>
-                      <p className="font-semibold text-gray-900">{p.name}</p>
-                      <p className="text-sm text-gray-600">
-                        {isTroo
-                          ? "Continue with Troosolar's BNPL process (credit check, approval, guarantor flow)."
-                          : "Partner financier — we'll get back to you within 24–72 hours after credit-check payment."}
-                      </p>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          )}
         </section>
 
         <button type="submit" className="w-full py-4 rounded-xl font-bold bg-[#273e8e] text-white hover:bg-[#1a2b6b] transition-colors">
