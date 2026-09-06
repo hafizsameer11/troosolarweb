@@ -32,6 +32,7 @@ import {
     entityHighlyRecommended,
 } from '../../utils/bundleSort';
 import { bundleBnplPrice, bundleBnplDisplay } from '../../utils/bundlePricing';
+import BnplFinalApplicationForm from '../../Component/BNPL/BnplFinalApplicationForm';
 
 const BUNDLE_STEP_GRID_PAGE_SIZE = 9;
 
@@ -261,6 +262,8 @@ const BNPLFlow = () => {
     const [loanConfig, setLoanConfig] = useState(null);
     const [addOns, setAddOns] = useState([]);
     const [states, setStates] = useState([]);
+    const [financingPartners, setFinancingPartners] = useState([]);
+    const [loadingFinancingPartners, setLoadingFinancingPartners] = useState(false);
     const [checkoutSettings, setCheckoutSettings] = useState(null);
     const [loading, setLoading] = useState(false);
     const [applicationId, setApplicationId] = useState(null);
@@ -357,6 +360,39 @@ const BNPLFlow = () => {
         livePhotoPreview: null,
         auditRequestId: null, // Store audit request ID after submission
         streetName: '', // Street name for property address
+        // Final Application (Phase 1)
+        bankAccountNo: '',
+        bankName: '',
+        gender: '',
+        dateOfBirth: '',
+        maritalStatus: '',
+        occupation: '',
+        monthlyIncome: '',
+        idType: '',
+        idExpiryDate: '',
+        idNo: '',
+        nextOfKinName: '',
+        nextOfKinPhone: '',
+        nextOfKinAddress: '',
+        employmentCompanyName: '',
+        employmentCompanyAddress: '',
+        employmentDuration: '',
+        staffIdNo: '',
+        propertyStatus: '',
+        businessName: '',
+        businessAddress: '',
+        businessRcBn: '',
+        businessBankAccountNo: '',
+        businessBankName: '',
+        annualTurnover: '',
+        avgMonthlyTurnover: '',
+        dateOfIncorporation: '',
+        businessOwnership: '',
+        officialEmail: '',
+        natureOfBusiness: '',
+        financeAgreementAccepted: false,
+        financingPath: 'troosolar', // 'troosolar' | 'partner'
+        financingPartnerId: null,
     });
 
     // Camera capture for live photo
@@ -652,12 +688,24 @@ const BNPLFlow = () => {
     // Default credit check method when step 10 is reached
     React.useEffect(() => {
         if (step === 10 && !formData.creditCheckMethod) {
-            setFormData(prev => ({ ...prev, creditCheckMethod: 'auto' }));
+            setFormData(prev => ({
+                ...prev,
+                creditCheckMethod: prev.financingPath === 'partner' ? 'partner' : 'auto',
+            }));
         }
     }, [step]);
 
     React.useEffect(() => {
         if (step !== 10) return;
+        if (formData.financingPath === 'partner') {
+            setFormData((prev) => ({ ...prev, creditCheckMethod: 'partner' }));
+            setCreditCheckFeePaid(!!skipCreditCheckFee);
+            setMonoFeePaymentReference(null);
+            setShowCreditCheckFeeModal(false);
+            setAcceptedTerms(false);
+            setCreditCheckPhase(skipCreditCheckFee ? 'partner_ready' : 'pay_fee');
+            return;
+        }
         setCreditCheckPhase('choose_method');
         setCreditCheckFeePaid(false);
         setMonoFeePaymentReference(null);
@@ -1075,7 +1123,8 @@ const BNPLFlow = () => {
     React.useEffect(() => {
         const fetchConfig = async () => {
             try {
-                const [custRes, auditRes, loanConfigRes, addOnsRes, statesRes, categoriesRes, checkoutRes] = await Promise.all([
+                setLoadingFinancingPartners(true);
+                const [custRes, auditRes, loanConfigRes, addOnsRes, statesRes, categoriesRes, checkoutRes, partnersRes] = await Promise.all([
                     axios.get(API.CONFIG_CUSTOMER_TYPES).catch(() => ({ data: { status: 'error' }, status: 404 })),
                     axios.get(API.CONFIG_AUDIT_TYPES).catch(() => ({ data: { status: 'error' }, status: 404 })),
                     axios.get(API.CONFIG_LOAN_CONFIGURATION).catch(() => ({ data: { status: 'error' }, status: 404 })),
@@ -1088,6 +1137,7 @@ const BNPLFlow = () => {
                         },
                     }).catch(() => ({ data: { status: 'error' }, status: 404 })),
                     axios.get(API.CONFIG_CHECKOUT_SETTINGS).catch(() => ({ data: { status: 'error' }, status: 404 })),
+                    axios.get(API.CONFIG_FINANCING_PARTNERS).catch(() => ({ data: { status: 'error' }, status: 404 })),
                 ]);
                 
                 // Only set data if API call was successful (not 404)
@@ -1112,9 +1162,14 @@ const BNPLFlow = () => {
                 if (checkoutRes.status !== 404 && checkoutRes.data?.status === 'success') {
                     setCheckoutSettings(checkoutRes.data.data || null);
                 }
+                if (partnersRes.status !== 404 && partnersRes.data?.status === 'success') {
+                    setFinancingPartners(Array.isArray(partnersRes.data.data) ? partnersRes.data.data : []);
+                }
+                setLoadingFinancingPartners(false);
             } catch (error) {
                 // Silently fail - APIs may not be implemented yet
                 console.log("Configuration APIs not available yet:", error.message);
+                setLoadingFinancingPartners(false);
             }
             
             // Fallback to defaults if APIs fail or return 404
@@ -4976,6 +5031,17 @@ const BNPLFlow = () => {
 
     const afterCreditCheckFeePaid = async () => {
         setCreditCheckFeePaid(true);
+        if (formData.financingPath === 'partner') {
+            setFormData((prev) => ({ ...prev, creditCheckMethod: 'partner' }));
+            setCreditCheckPhase('processing');
+            try {
+                const fakeEvent = { preventDefault: () => {} };
+                await submitApplication(fakeEvent);
+            } finally {
+                setProcessingCreditCheckPayment(false);
+            }
+            return;
+        }
         const isManual = formData.creditCheckMethod === 'manual' || monoFailed;
         if (isManual) {
             setCreditCheckPhase('manual_upload');
@@ -5454,6 +5520,7 @@ const BNPLFlow = () => {
     };
 
     const renderStep10 = () => {
+        const isPartnerPath = formData.financingPath === 'partner';
         const isManualMethod = formData.creditCheckMethod === 'manual' || monoFailed;
         const isAutoMethod = formData.creditCheckMethod === 'auto' && !monoFailed;
         const phase = creditCheckPhase;
@@ -5462,7 +5529,7 @@ const BNPLFlow = () => {
             <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100 relative">
                 <button
                     onClick={() => {
-                        if (phase === 'choose_method') {
+                        if (isPartnerPath || phase === 'choose_method' || phase === 'partner_ready') {
                             setStep(11);
                         } else if (phase === 'mono_link') {
                             setCreditCheckPhase('choose_method');
@@ -5482,9 +5549,17 @@ const BNPLFlow = () => {
                 >
                     <ArrowLeft size={16} className="mr-2" /> Back
                 </button>
-                <h2 className="text-2xl font-bold mb-2 text-[#273e8e]">Credit Check</h2>
+                <h2 className="text-2xl font-bold mb-2 text-[#273e8e]">
+                    {isPartnerPath ? 'Credit Check Fee' : 'Credit Check'}
+                </h2>
 
-                {skipCreditCheckFee && phase === 'choose_method' && (
+                {isPartnerPath && (
+                    <p className="text-gray-600 mb-6">
+                        Pay the credit check fee to send your application to your selected financing partner. We&apos;ll get back to you within 24–72 hours.
+                    </p>
+                )}
+
+                {skipCreditCheckFee && (phase === 'choose_method' || phase === 'partner_ready') && (
                     <div className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4">
                         <p className="text-sm text-green-800 font-medium">
                             Re-application detected: your credit check fee is waived for this submission.
@@ -5496,13 +5571,33 @@ const BNPLFlow = () => {
                     <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
                         <p className="text-sm text-blue-800 font-medium">
                             {phase === 'processing'
-                                ? 'Running your credit verification and submitting your application...'
+                                ? (isPartnerPath
+                                    ? 'Submitting your application to the financing partner...'
+                                    : 'Running your credit verification and submitting your application...')
                                 : 'Please wait...'}
                         </p>
                     </div>
                 )}
 
-                {phase === 'choose_method' && (
+                {phase === 'partner_ready' && isPartnerPath && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const fakeEvent = { preventDefault: () => {} };
+                            submitApplication(fakeEvent);
+                        }}
+                        disabled={loading || processingCreditCheckPayment}
+                        className={`w-full py-4 rounded-xl font-bold transition-colors ${
+                            loading || processingCreditCheckPayment
+                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                : 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
+                        }`}
+                    >
+                        {loading ? 'Submitting...' : 'Submit Application'}
+                    </button>
+                )}
+
+                {phase === 'choose_method' && !isPartnerPath && (
                     <>
                         <p className="text-gray-600 mb-6">Choose how you would like to complete your credit check.</p>
                         <div className="grid gap-4 mb-6 md:grid-cols-2">
@@ -5560,7 +5655,7 @@ const BNPLFlow = () => {
                     </>
                 )}
 
-                {phase === 'mono_link' && (
+                {phase === 'mono_link' && !isPartnerPath && (
                     <>
                         <p className="text-gray-600 mb-6">
                             Step 1 of 3: Link your bank with Mono. Credit verification starts only after you pay the fee.
@@ -5617,16 +5712,18 @@ const BNPLFlow = () => {
 
                 {phase === 'pay_fee' && !skipCreditCheckFee && (
                     <>
-                        <p className="text-gray-600 mb-6">
-                            {isAutoMethod
-                                ? 'Step 2 of 3: Pay the verification fee from your linked bank or online (card or bank transfer). Credit check runs only after payment.'
-                                : 'Pay the verification fee before uploading your documents.'}
-                        </p>
+                        {!isPartnerPath && (
+                            <p className="text-gray-600 mb-6">
+                                {isAutoMethod
+                                    ? 'Step 2 of 3: Pay the verification fee from your linked bank or online (card or bank transfer). Credit check runs only after payment.'
+                                    : 'Pay the verification fee before uploading your documents.'}
+                            </p>
+                        )}
                         {renderCreditCheckFeeSection()}
                     </>
                 )}
 
-                {phase === 'manual_upload' && (
+                {phase === 'manual_upload' && !isPartnerPath && (
                     <>
                         <p className="text-gray-600 mb-6">
                             {creditCheckFeePaid || skipCreditCheckFee
@@ -5639,11 +5736,11 @@ const BNPLFlow = () => {
                             onClick={(e) => {
                                 e.preventDefault();
                                 if (!formData.bankStatement) {
-                                    alert("Please upload your bank statement (Last 6 Months)");
+                                    alert('Please upload your bank statement (Last 6 Months)');
                                     return;
                                 }
                                 if (!formData.livePhoto) {
-                                    alert("Please upload your live photo / selfie");
+                                    alert('Please upload your live photo / selfie');
                                     return;
                                 }
                                 const fakeEvent = { preventDefault: () => {} };
@@ -5671,7 +5768,6 @@ const BNPLFlow = () => {
                     </>
                 )}
 
-                {/* Legacy modal kept for any external triggers */}
                 {showCreditCheckFeeModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
                     setShowCreditCheckFeeModal(false);
@@ -5779,12 +5875,57 @@ const BNPLFlow = () => {
                 formDataToSend.append('loan_calculation_id', loanCalculationId);
             }
 
+            const financingPath = formData.financingPath === 'partner' ? 'partner' : 'troosolar';
+            const creditMethod = financingPath === 'partner'
+                ? 'partner'
+                : (formData.creditCheckMethod || 'manual');
+            formDataToSend.set('credit_check_method', creditMethod);
+            formDataToSend.append('financing_path', financingPath);
+            if (formData.financingPartnerId) {
+                formDataToSend.append('financing_partner_id', String(formData.financingPartnerId));
+            }
+            formDataToSend.append('finance_agreement_accepted', formData.financeAgreementAccepted ? '1' : '0');
+            if (formData.propertyStatus) {
+                formDataToSend.append('property_status', formData.propertyStatus);
+            }
+
             // Personal Details
             formDataToSend.append('personal_details[full_name]', formData.fullName);
             formDataToSend.append('personal_details[bvn]', formData.bvn);
             formDataToSend.append('personal_details[phone]', formData.phone);
             formDataToSend.append('personal_details[email]', formData.email);
             formDataToSend.append('personal_details[social_media]', formData.socialMedia || '');
+            formDataToSend.append('personal_details[bank_account_no]', formData.bankAccountNo || '');
+            formDataToSend.append('personal_details[bank_name]', formData.bankName || '');
+            formDataToSend.append('personal_details[gender]', formData.gender || '');
+            formDataToSend.append('personal_details[date_of_birth]', formData.dateOfBirth || '');
+            formDataToSend.append('personal_details[marital_status]', formData.maritalStatus || '');
+            formDataToSend.append('personal_details[occupation]', formData.occupation || '');
+            formDataToSend.append('personal_details[monthly_income]', formData.monthlyIncome || '');
+            formDataToSend.append('personal_details[id_type]', formData.idType || '');
+            formDataToSend.append('personal_details[id_expiry_date]', formData.idExpiryDate || '');
+            formDataToSend.append('personal_details[id_no]', formData.idNo || '');
+
+            formDataToSend.append('next_of_kin[name]', formData.nextOfKinName || '');
+            formDataToSend.append('next_of_kin[phone]', formData.nextOfKinPhone || '');
+            formDataToSend.append('next_of_kin[address]', formData.nextOfKinAddress || '');
+
+            formDataToSend.append('employment_details[company_name]', formData.employmentCompanyName || '');
+            formDataToSend.append('employment_details[company_address]', formData.employmentCompanyAddress || '');
+            formDataToSend.append('employment_details[employment_duration]', formData.employmentDuration || '');
+            formDataToSend.append('employment_details[staff_id_no]', formData.staffIdNo || '');
+
+            formDataToSend.append('business_details[business_name]', formData.businessName || '');
+            formDataToSend.append('business_details[business_address]', formData.businessAddress || '');
+            formDataToSend.append('business_details[business_rc_bn]', formData.businessRcBn || '');
+            formDataToSend.append('business_details[business_bank_account_no]', formData.businessBankAccountNo || '');
+            formDataToSend.append('business_details[business_bank_name]', formData.businessBankName || '');
+            formDataToSend.append('business_details[annual_turnover]', formData.annualTurnover || '');
+            formDataToSend.append('business_details[avg_monthly_turnover]', formData.avgMonthlyTurnover || '');
+            formDataToSend.append('business_details[date_of_incorporation]', formData.dateOfIncorporation || '');
+            formDataToSend.append('business_details[business_ownership]', formData.businessOwnership || '');
+            formDataToSend.append('business_details[official_email]', formData.officialEmail || '');
+            formDataToSend.append('business_details[nature_of_business]', formData.natureOfBusiness || '');
 
             // Property Details - Always send all fields (backend requires estate fields when property_details is present)
             formDataToSend.append('property_details[state]', formData.state || '');
@@ -5792,6 +5933,7 @@ const BNPLFlow = () => {
             formDataToSend.append('property_details[landmark]', formData.landmark || '');
             formDataToSend.append('property_details[floors]', formData.floors || '');
             formDataToSend.append('property_details[rooms]', formData.rooms || '');
+            formDataToSend.append('property_details[property_status]', formData.propertyStatus || '');
             formDataToSend.append('property_details[is_gated_estate]', formData.isGatedEstate ? 1 : 0);
             // Always send estate fields (required by backend when property_details is present)
             formDataToSend.append('property_details[estate_name]', formData.isGatedEstate ? (formData.estateName || '') : '');
@@ -5832,8 +5974,8 @@ const BNPLFlow = () => {
                 compulsoryAddOns.forEach(id => formDataToSend.append('add_on_ids[]', id));
             }
 
-            // Files - Only required for manual credit check or when Mono has failed
-            if ((formData.creditCheckMethod === 'manual' || monoFailed) && !skipCreditCheckFee) {
+            // Files - Only required for manual credit check or when Mono has failed (not partner path)
+            if (financingPath !== 'partner' && (formData.creditCheckMethod === 'manual' || monoFailed) && !skipCreditCheckFee) {
                 if (!formData.bankStatement || !formData.livePhoto) {
                     alert("Bank statement and live photo are required for manual credit check. Please upload both documents.");
                     setLoading(false);
@@ -5886,144 +6028,22 @@ const BNPLFlow = () => {
     };
 
     const renderStep11 = () => (
-        <div className="animate-fade-in max-w-4xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-            <button onClick={() => setStep(9)} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
-                <ArrowLeft size={16} className="mr-2" /> Back
-            </button>
-            <h2 className="text-2xl font-bold mb-6 text-[#273e8e]">Final Application</h2>
-            <form onSubmit={(e) => {
-                e.preventDefault();
-                // Validate required fields before proceeding to credit check
-                // Note: bankStatement and livePhoto removed - no longer required (handled via Mono)
-                if (!formData.fullName || !formData.bvn || !formData.phone || !formData.email || !formData.socialMedia || 
-                    !formData.state || !formData.address) {
-                    alert("Please fill in all required fields");
-                    return;
-                }
-                if (!isValidSocialMediaIdentity(formData.socialMedia)) {
-                    alert("Please enter a verifiable social media identity (Instagram @handle or Facebook/Instagram profile link).");
-                    return;
-                }
-                if (formData.isGatedEstate && (!formData.estateName || !formData.estateAddress)) {
-                    alert("Please fill in Estate Name and Estate Address");
-                    return;
-                }
-                setStep(10); // Go to credit check method selection
-            }} className="space-y-6">
-                {/* Personal Details Section */}
-                <div>
-                    <h3 className="text-lg font-bold mb-4 text-gray-800 border-b pb-2">Personal Details</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="text" placeholder="Full Name" required className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, fullName: e.target.value })} />
-                        <input type="text" placeholder="BVN" required className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, bvn: e.target.value })} />
-                        <input type="tel" placeholder="Phone Number" required className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, phone: e.target.value })} />
-                        <input type="email" placeholder="Email Address" required className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, email: e.target.value })} />
-                        <div className="col-span-2">
-                            <input 
-                                type="text" 
-                                placeholder="Social Media Handle *" 
-                                required 
-                                className="w-full p-3 border rounded-lg" 
-                                value={formData.socialMedia}
-                                onChange={e => setFormData({ ...formData, socialMedia: e.target.value })} 
-                            />
-                            <p className="text-xs text-gray-500 mt-1">Social media handle is required for verification (e.g., Instagram handle or Facebook username).</p>
-                            {formData.socialMedia && formData.socialMedia.trim().length === 0 && (
-                                <p className="text-xs text-red-600 mt-1">Social media handle cannot be empty</p>
-                            )}
-                            {formData.socialMedia && formData.socialMedia.trim().length > 0 && !isValidSocialMediaIdentity(formData.socialMedia) && (
-                                <p className="text-xs text-red-600 mt-1">Provide a verifiable handle: @username or a full Instagram/Facebook profile link.</p>
-                            )}
-                            {isValidSocialMediaIdentity(formData.socialMedia) && (
-                                <a
-                                    href={getSocialMediaVerificationUrl(formData.socialMedia)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-block text-xs text-[#273e8e] mt-1 underline"
-                                >
-                                    Verify profile link
-                                </a>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Property Details Section */}
-                <div>
-                    <h3 className="text-lg font-bold mb-4 text-gray-800 border-b pb-2">Property Details</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {states.length > 0 ? (
-                            <select
-                                required
-                                className="p-3 border rounded-lg"
-                                onChange={e => {
-                                    const stateId = e.target.value ? Number(e.target.value) : null;
-                                    const selectedState = states.find(s => s.id === stateId);
-                                    setFormData({ ...formData, state: selectedState?.name || '', stateId });
-                                }}
-                            >
-                                <option value="">Select State</option>
-                                {states.filter(s => s.is_active).map((state) => (
-                                    <option key={state.id} value={state.id}>{state.name}</option>
-                                ))}
-                            </select>
-                        ) : (
-                            <input type="text" placeholder="State" required className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, state: e.target.value })} />
-                        )}
-                        <input type="text" placeholder="Address" required className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, address: e.target.value })} />
-                        <input type="text" placeholder="e.g., grid, diesel generator(kVA), inverter(kVA/kW)" className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, landmark: e.target.value })} />
-                        <input type="number" placeholder="Floors" className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, floors: e.target.value })} />
-                        <input type="number" placeholder="Rooms" className="p-3 border rounded-lg" onChange={e => setFormData({ ...formData, rooms: e.target.value })} />
-                    </div>
-                    <div className="mt-4">
-                        <label className="flex items-center space-x-2">
-                            <input type="checkbox" checked={formData.isGatedEstate} onChange={e => setFormData({ ...formData, isGatedEstate: e.target.checked })} />
-                            <span>Is this in a gated estate?</span>
-                        </label>
-                    </div>
-                    {formData.isGatedEstate && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                            <input 
-                                type="text" 
-                                placeholder="Estate Name *" 
-                                required={formData.isGatedEstate}
-                                className="p-3 border rounded-lg" 
-                                onChange={e => setFormData({ ...formData, estateName: e.target.value })} 
-                            />
-                            <input 
-                                type="text" 
-                                placeholder="Estate Address *" 
-                                required={formData.isGatedEstate}
-                                className="p-3 border rounded-lg" 
-                                onChange={e => setFormData({ ...formData, estateAddress: e.target.value })} 
-                            />
-                        </div>
-                    )}
-                </div>
-
-                <button 
-                    type="submit" 
-                    disabled={loading || (formData.isGatedEstate && (!formData.estateName || !formData.estateAddress))} 
-                    className={`w-full py-4 rounded-xl font-bold transition-colors ${
-                        loading || (formData.isGatedEstate && (!formData.estateName || !formData.estateAddress))
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
-                    }`}
-                >
-                    Continue to Credit Check
-                </button>
-                {formData.isGatedEstate && (!formData.estateName || !formData.estateAddress) && (
-                    <p className="text-sm text-red-600 mt-2 text-center">
-                        Please fill in Estate Name and Estate Address
-                    </p>
-                )}
-            </form>
-        </div>
+        <BnplFinalApplicationForm
+            formData={formData}
+            setFormData={setFormData}
+            states={states}
+            financingPartners={financingPartners}
+            loadingPartners={loadingFinancingPartners}
+            onBack={() => setStep(9)}
+            onContinue={() => setStep(10)}
+            isValidSocialMediaIdentity={isValidSocialMediaIdentity}
+            getSocialMediaVerificationUrl={getSocialMediaVerificationUrl}
+        />
     );
 
-    // Status polling effect for BNPL application
+    // Status polling effect for BNPL application (Troosolar path only)
     React.useEffect(() => {
-        if (step === 12 && applicationId) {
+        if (step === 12 && applicationId && formData.financingPath !== 'partner') {
             const pollInterval = setInterval(async () => {
                 try {
                     const token = localStorage.getItem('access_token');
@@ -6090,8 +6110,17 @@ const BNPLFlow = () => {
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-blue-100">
                 <Clock size={64} className="text-[#273e8e] mx-auto mb-6 animate-pulse" />
                 <p className="text-xl font-medium text-gray-800 mb-4">Your application is under review.</p>
-                <p className="text-gray-600 mb-4">We are processing your details. This usually takes 24-72 hours.</p>
-                {formData.creditCheckMethod === 'auto' && (
+                <p className="text-gray-600 mb-4">
+                    {formData.financingPath === 'partner'
+                        ? 'We have received your application for partner financing. We will get back to you within 24–72 hours.'
+                        : 'We are processing your details. This usually takes 24-72 hours.'}
+                </p>
+                {formData.financingPath === 'partner' && (
+                    <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4">
+                        Your application was routed to a financing partner. Troosolar&apos;s internal guarantor flow does not continue for this path.
+                    </p>
+                )}
+                {formData.financingPath !== 'partner' && formData.creditCheckMethod === 'auto' && (
                     <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4">
                         Your Mono bank credit check is running in the background. Our team will see the results when ready — you do not need to wait on this screen.
                     </p>

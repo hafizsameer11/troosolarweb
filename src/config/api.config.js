@@ -80,6 +80,7 @@ const API = {
     CONFIG_CUSTOMER_TYPES: `${BASE_URL}/config/customer-types`,
     CONFIG_AUDIT_TYPES: `${BASE_URL}/config/audit-types`,
     CONFIG_LOAN_CONFIGURATION: `${BASE_URL}/config/loan-configuration`,
+    CONFIG_FINANCING_PARTNERS: `${BASE_URL}/config/financing-partners`,
     CONFIG_CALCULATOR_SETTINGS: `${BASE_URL}/config/calculator-settings`,
     CONFIG_MONO: `${BASE_URL}/config/mono`,
     CONFIG_ADD_ONS: `${BASE_URL}/config/add-ons`,
