@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 
 /**
- * Choose financing option before Final Application form.
+ * Choose financing option after Review Loan Plan and before Final Application form.
  * Options come from Admin Settings → Financing Partner (Active only, including Troosolar).
  */
 const BnplFinancingPathStep = ({
@@ -47,7 +47,7 @@ const BnplFinancingPathStep = ({
       </button>
       <h2 className="text-2xl font-bold mb-2 text-[#273e8e]">Financing Path</h2>
       <p className="text-sm text-gray-600 mb-6">
-        Choose how you want to finance this order before paying the credit check fee.
+        Choose how you want to finance this order before completing the Final Application.
         Only options activated in Settings are listed. Partner financiers return a decision in 24–72 hours
         after credit-check payment; Troosolar continues the full BNPL process flow.
       </p>
@@ -102,7 +102,7 @@ const BnplFinancingPathStep = ({
             : 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
         }`}
       >
-        Continue to Credit Check
+        Continue to Final Application
       </button>
     </div>
   );

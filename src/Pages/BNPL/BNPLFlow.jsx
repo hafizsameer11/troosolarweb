@@ -1698,7 +1698,7 @@ const BNPLFlow = () => {
 
     const handleLoanConfirm = (loanDetails) => {
         setFormData({ ...formData, loanDetails });
-        setStep(9); // Review Loan Plan (per client form: partner selection comes after Final Application)
+        setStep(9); // Review Loan Plan → Financing Path → Final Application
     };
 
     const handleBundleSelect = (bundle) => {
@@ -4942,7 +4942,7 @@ const BNPLFlow = () => {
                                 },
                             }
                         }));
-                        setStep(11);
+                        setStep(9.5); // Financing Path before Final Application form
                     }}
                     className="flex-1 bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
                 >
@@ -5524,7 +5524,7 @@ const BNPLFlow = () => {
                 <button
                     onClick={() => {
                         if (isPartnerPath || phase === 'choose_method' || phase === 'partner_ready') {
-                            setStep(11.5);
+                            setStep(11); // Back to Final Application (Financing Path is before the form)
                         } else if (phase === 'mono_link') {
                             setCreditCheckPhase('choose_method');
                         } else if (phase === 'pay_fee') {
@@ -6021,14 +6021,14 @@ const BNPLFlow = () => {
         }
     };
 
-    const renderStep11_5 = () => (
+    const renderStep9_5 = () => (
         <BnplFinancingPathStep
             formData={formData}
             setFormData={setFormData}
             financingPartners={financingPartners}
             loadingPartners={loadingFinancingPartners}
-            onBack={() => setStep(11)}
-            onContinue={() => setStep(10)}
+            onBack={() => setStep(9)}
+            onContinue={() => setStep(11)}
         />
     );
 
@@ -6037,8 +6037,8 @@ const BNPLFlow = () => {
             formData={formData}
             setFormData={setFormData}
             states={states}
-            onBack={() => setStep(9)}
-            onContinue={() => setStep(11.5)}
+            onBack={() => setStep(9.5)}
+            onContinue={() => setStep(10)}
             isValidSocialMediaIdentity={isValidSocialMediaIdentity}
             getSocialMediaVerificationUrl={getSocialMediaVerificationUrl}
         />
@@ -7012,8 +7012,8 @@ const BNPLFlow = () => {
                             {step === 7.5 && renderStep7_5()}
                             {step === 8 && renderStep8()}
                             {step === 10 && renderStep10()}
+                            {step === 9.5 && renderStep9_5()}
                             {step === 11 && renderStep11()}
-                            {step === 11.5 && renderStep11_5()}
                             {step === 12 && renderStep12()}
                             {step === 13 && renderStep13()}
                             {step === 14 && renderStep14()}
