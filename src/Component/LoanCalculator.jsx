@@ -67,7 +67,11 @@ const LoanCalculator = ({
   const config = loanConfigProp || loanConfig;
   const minDepositPercent = config?.equity_contribution_min ?? 30;
   const maxDepositPercent = config?.equity_contribution_max ?? 80;
-  const maxInterestRate = config?.interest_rate_max ?? 4;
+  // Applied from Admin → BNPL → Loan Settings (interest_rate_percentage). Customer cannot change it here.
+  const interestRate = Number(config?.interest_rate_max ?? config?.interest_rate_min ?? 4);
+  const interestRateLabel = Number.isFinite(interestRate)
+    ? `${Number(interestRate.toFixed(2))}%`
+    : '—';
   const minAmount = Number(config?.minimum_loan_amount) || 1500000;
   const allowedTenors = useMemo(() => (Array.isArray(config?.loan_durations) && config.loan_durations.length > 0
     ? config.loan_durations
@@ -78,7 +82,6 @@ const LoanCalculator = ({
 
   const [depositPercent, setDepositPercent] = useState(downPaymentOptions[0] ?? minDepositPercent);
   const [tenor, setTenor] = useState(allowedTenors.includes(12) ? 12 : allowedTenors[0] || 12);
-  const [interestRate] = useState(maxInterestRate);
   const vatPercent = Number(config?.vat_percentage ?? 7.5);
   const insurancePercent = Number(config?.insurance_fee_percentage ?? 3);
   const managementPercent = Number(config?.management_fee_percentage ?? 1);
@@ -154,7 +157,8 @@ const LoanCalculator = ({
         { label: 'Total Amount', value: formatPlain(grandTotal) },
         { label: 'Initial Deposit', value: `−${formatPlain(depositAmount)}`, accent: 'red' },
         { label: 'Total Loan Amount', value: formatPlain(principal) },
-        { label: 'Total Interest Amount', value: formatPlain(totalInterest), accent: 'orange' },
+        { label: 'Interest Rate (monthly)', value: interestRateLabel },
+        { label: `Total Interest Amount (${interestRateLabel} × ${tenor} mo)`, value: formatPlain(totalInterest), accent: 'orange' },
         { label: 'Total Repayment Amount', value: formatPlain(totalRepayment), bold: true },
         { label: `Monthly Repayment Amount (${tenor} months)`, value: formatPlain(monthlyRepayment), bold: true, highlight: true, hero: true },
       ];
@@ -169,7 +173,8 @@ const LoanCalculator = ({
       { label: 'Total loan amount', value: formatPlain(principal) },
       { label: 'Upfront Payment (Initial Deposit + Administrative Fees)', value: formatPlain(upfrontDue), bold: true, highlight: true },
       { section: 'repayment' },
-      { label: 'Total interest', value: formatPlain(totalInterest) },
+      { label: 'Interest rate (monthly)', value: interestRateLabel },
+      { label: `Total interest (${interestRateLabel} × ${tenor} mo)`, value: formatPlain(totalInterest) },
       { label: 'Total repayment amount', value: formatPlain(totalRepayment), bold: true },
       { label: `Monthly repayment (${tenor} months)`, value: formatPlain(monthlyRepayment), bold: true, highlight: true, hero: true },
       { section: 'fees' },
@@ -399,7 +404,7 @@ const LoanCalculator = ({
                 <p className="text-[#273e8e] font-bold mt-2 text-lg">{formatCurrency(depositAmount)}</p>
               </div>
 
-              {/* Interest rate is applied in calculation but not shown on the BNPL first calculator (client request). */}
+              {/* Interest rate comes from Admin Loan Settings; shown in Loan Breakdown (not editable chips). */}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -460,7 +465,11 @@ const LoanCalculator = ({
                     <span className="font-medium">{formatCurrency(principal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Total Interest Amount</span>
+                    <span className="text-gray-500">Interest Rate (monthly)</span>
+                    <span className="font-medium text-[#273e8e]">{interestRateLabel}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total Interest Amount ({interestRateLabel} × {tenor} mo)</span>
                     <span className="font-medium text-orange-600">{formatCurrency(totalInterest)}</span>
                   </div>
                   <div className="flex justify-between text-sm pt-2 border-t">
@@ -504,7 +513,11 @@ const LoanCalculator = ({
               </div>
 
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Total interest</span>
+                <span className="text-gray-500">Interest rate (monthly)</span>
+                <span className="font-medium text-[#273e8e]">{interestRateLabel}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Total interest ({interestRateLabel} × {tenor} mo)</span>
                 <span className="font-medium">{formatCurrency(totalInterest)}</span>
               </div>
               <div className="flex justify-between text-sm pt-2 border-t">

@@ -4860,19 +4860,23 @@ const BNPLFlow = () => {
                                 <span>₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(snapshot.totalLoanAmount || 0)}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span>3. Total Interest Amount</span>
+                                <span>3. Interest Rate (monthly)</span>
+                                <span className="font-bold text-[#273e8e]">{Number(Number(snapshot.interestRate || 0).toFixed(2))}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span>4. Total Interest Amount ({Number(Number(snapshot.interestRate || 0).toFixed(2))}% × {snapshot.tenor} mo)</span>
                                 <span>₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(snapshot.totalInterestAmount || 0)}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span>4. Total Repayment Amount</span>
+                                <span>5. Total Repayment Amount</span>
                                 <span>₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(snapshot.totalRepaymentAmount || 0)}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span>5. <span className="font-semibold">Monthly Repayment Amount</span></span>
+                                <span>6. <span className="font-semibold">Monthly Repayment Amount</span></span>
                                 <span className="font-bold">₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(snapshot.monthlyRepaymentAmount || 0)}</span>
                             </div>
                             <div className="flex justify-between border-t pt-2 mt-2">
-                                <span>6. Loan Tenor</span>
+                                <span>7. Loan Tenor</span>
                                 <span className="font-bold text-[#273e8e]">{snapshot.tenor} months</span>
                             </div>
                         </div>
