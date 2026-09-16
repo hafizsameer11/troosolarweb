@@ -153,14 +153,11 @@ const LoanCalculator = ({
 
   const buildSummaryRows = () => {
     if (!isStandalone) {
+      // BNPL first calculator: only show Total Amount, Initial Deposit, Total Loan Amount
       return [
         { label: 'Total Amount', value: formatPlain(grandTotal) },
         { label: 'Initial Deposit', value: `−${formatPlain(depositAmount)}`, accent: 'red' },
         { label: 'Total Loan Amount', value: formatPlain(principal) },
-        { label: 'Interest Rate (monthly)', value: interestRateLabel },
-        { label: `Total Interest Amount (${interestRateLabel} × ${tenor} mo)`, value: formatPlain(totalInterest), accent: 'orange' },
-        { label: 'Total Repayment Amount', value: formatPlain(totalRepayment), bold: true },
-        { label: `Monthly Repayment Amount (${tenor} months)`, value: formatPlain(monthlyRepayment), bold: true, highlight: true, hero: true },
       ];
     }
     return [
@@ -460,25 +457,9 @@ const LoanCalculator = ({
                     <span className="text-gray-500">Initial Deposit</span>
                     <span className="font-medium text-red-600">−{formatCurrency(depositAmount)}</span>
                   </div>
-                  <div className="flex justify-between text-sm border-b border-gray-200 pb-2">
+                  <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Total Loan Amount</span>
                     <span className="font-medium">{formatCurrency(principal)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Interest Rate (monthly)</span>
-                    <span className="font-medium text-[#273e8e]">{interestRateLabel}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Total Interest Amount ({interestRateLabel} × {tenor} mo)</span>
-                    <span className="font-medium text-orange-600">{formatCurrency(totalInterest)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm pt-2 border-t">
-                    <span className="text-gray-500">Total Repayment Amount</span>
-                    <span className="font-bold">{formatCurrency(totalRepayment)}</span>
-                  </div>
-                  <div className="bg-[#273e8e] text-white p-4 rounded-lg mt-2">
-                    <p className="text-xs opacity-80 mb-1">Monthly Repayment Amount ({tenor} months)</p>
-                    <p className="text-2xl font-bold">{formatCurrency(monthlyRepayment)}</p>
                   </div>
                 </>
               ) : (
