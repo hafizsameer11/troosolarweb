@@ -19,8 +19,13 @@ const LoanCalculator = ({
   bundlePrice: bundlePriceProp,
   onConfirm,
   loanConfig: loanConfigProp,
+  /** BNPL first calculator uses 'simple' (3 lines). Troosolar full plan uses 'full'. */
+  breakdownMode = 'full',
+  initialDepositPercent,
+  initialTenor,
 }) => {
   const isStandalone = totalAmountProp == null || totalAmountProp === undefined;
+  const isSimpleBreakdown = !isStandalone && breakdownMode === 'simple';
   /** BNPL embed uses invoice grand total (VAT-inclusive). Tools calculator uses net excl. VAT. */
   const amountIncludesVat = !isStandalone;
   const breakdownRef = useRef(null);
@@ -80,8 +85,14 @@ const LoanCalculator = ({
     ? [...new Set(config.down_payment_options.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v >= 0 && v <= 100))].sort((a, b) => a - b)
     : [30, 40, 50, 60, 70, 80].filter((p) => p >= minDepositPercent && p <= maxDepositPercent)), [config?.down_payment_options, minDepositPercent, maxDepositPercent]);
 
-  const [depositPercent, setDepositPercent] = useState(downPaymentOptions[0] ?? minDepositPercent);
-  const [tenor, setTenor] = useState(allowedTenors.includes(12) ? 12 : allowedTenors[0] || 12);
+  const [depositPercent, setDepositPercent] = useState(
+    Number.isFinite(Number(initialDepositPercent)) ? Number(initialDepositPercent) : (downPaymentOptions[0] ?? minDepositPercent)
+  );
+  const [tenor, setTenor] = useState(
+    Number.isFinite(Number(initialTenor)) && Number(initialTenor) > 0
+      ? Number(initialTenor)
+      : (allowedTenors.includes(12) ? 12 : allowedTenors[0] || 12)
+  );
   const vatPercent = Number(config?.vat_percentage ?? 7.5);
   const insurancePercent = Number(config?.insurance_fee_percentage ?? 3);
   const managementPercent = Number(config?.management_fee_percentage ?? 1);
@@ -153,11 +164,21 @@ const LoanCalculator = ({
 
   const buildSummaryRows = () => {
     if (!isStandalone) {
-      // BNPL first calculator: only show Total Amount, Initial Deposit, Total Loan Amount
+      if (isSimpleBreakdown) {
+        return [
+          { label: 'Total Amount', value: formatPlain(grandTotal) },
+          { label: 'Initial Deposit', value: `−${formatPlain(depositAmount)}`, accent: 'red' },
+          { label: 'Total Loan Amount', value: formatPlain(principal) },
+        ];
+      }
       return [
         { label: 'Total Amount', value: formatPlain(grandTotal) },
         { label: 'Initial Deposit', value: `−${formatPlain(depositAmount)}`, accent: 'red' },
         { label: 'Total Loan Amount', value: formatPlain(principal) },
+        { label: 'Interest Rate (monthly)', value: interestRateLabel },
+        { label: `Total Interest Amount (${interestRateLabel} × ${tenor} mo)`, value: formatPlain(totalInterest), accent: 'orange' },
+        { label: 'Total Repayment Amount', value: formatPlain(totalRepayment), bold: true },
+        { label: `Monthly Repayment Amount (${tenor} months)`, value: formatPlain(monthlyRepayment), bold: true, highlight: true, hero: true },
       ];
     }
     return [
@@ -448,6 +469,7 @@ const LoanCalculator = ({
               </div>
 
               {!isStandalone ? (
+                isSimpleBreakdown ? (
                 <>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Total Amount</span>
@@ -462,6 +484,61 @@ const LoanCalculator = ({
                     <span className="font-medium">{formatCurrency(principal)}</span>
                   </div>
                 </>
+                ) : (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total Amount</span>
+                    <span className="font-medium">{formatCurrency(grandTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-b border-gray-200 pb-2">
+                    <span className="text-gray-500">Initial Deposit</span>
+                    <span className="font-medium text-red-600">−{formatCurrency(depositAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-b border-gray-200 pb-2">
+                    <span className="text-gray-500">Total Loan Amount</span>
+                    <span className="font-medium">{formatCurrency(principal)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Interest Rate (monthly)</span>
+                    <span className="font-medium text-[#273e8e]">{interestRateLabel}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total Interest Amount ({interestRateLabel} × {tenor} mo)</span>
+                    <span className="font-medium text-orange-600">{formatCurrency(totalInterest)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm pt-2 border-t">
+                    <span className="text-gray-500">Total Repayment Amount</span>
+                    <span className="font-bold">{formatCurrency(totalRepayment)}</span>
+                  </div>
+                  <div className="bg-[#273e8e] text-white p-4 rounded-lg mt-2">
+                    <p className="text-xs opacity-80 mb-1">Monthly Repayment Amount ({tenor} months)</p>
+                    <p className="text-2xl font-bold">{formatCurrency(monthlyRepayment)}</p>
+                  </div>
+                  <div className="pt-4 border-t border-gray-200 space-y-2">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Administrative fees</p>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Insurance ({insurancePercent}% of bundle price)</span>
+                      <span className="font-medium">{formatCurrency(insuranceFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Management ({managementPercent}% of loan amount)</span>
+                      <span className="font-medium">{formatCurrency(managementFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Legal ({legalPercent}% of loan amount)</span>
+                      <span className="font-medium">{formatCurrency(legalFee)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-semibold">
+                      <span className="text-gray-700">Total administrative fees</span>
+                      <span>{formatCurrency(administrativeFees)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-semibold text-[#273e8e] pt-1 border-t">
+                      <span>Upfront (deposit + fees)</span>
+                      <span>{formatCurrency(upfrontDue)}</span>
+                    </div>
+                  </div>
+                </>
+                )
               ) : (
                 <>
               <div className="flex justify-between text-sm">

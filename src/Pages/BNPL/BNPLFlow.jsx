@@ -1698,7 +1698,12 @@ const BNPLFlow = () => {
 
     const handleLoanConfirm = (loanDetails) => {
         setFormData({ ...formData, loanDetails });
-        setStep(9); // Review Loan Plan → Financing Path → Final Application
+        setStep(8.5); // Financing Path (Troosolar vs Partner Financing)
+    };
+
+    const handleTroosolarFullLoanConfirm = (loanDetails) => {
+        setFormData({ ...formData, loanDetails });
+        setStep(9); // Review Loan Plan (Troosolar only)
     };
 
     const handleBundleSelect = (bundle) => {
@@ -4460,7 +4465,10 @@ const BNPLFlow = () => {
 
         return (
             <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-                <button onClick={() => setStep(6.5)} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
+                <button
+                    onClick={() => setStep(formData.financingPath === 'troosolar' && formData.loanDetails ? 8.7 : 6.5)}
+                    className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]"
+                >
                     <ArrowLeft size={16} className="mr-2" /> Back
                 </button>
                 <h2 className="text-2xl font-bold mb-4 text-[#273e8e] border-b pb-4">Invoice</h2>
@@ -4562,11 +4570,13 @@ const BNPLFlow = () => {
                             alert(`Your order total (₦${overallGrandTotal.toLocaleString()}) does not meet the minimum ₦${minOrderValue.toLocaleString()} amount required for credit financing. To qualify for Buy Now, Pay Later, please add more items to your cart. Thank you.`);
                             return;
                         }
-                        setStep(8); // Go to Loan Calculator
+                        setStep(formData.financingPath === 'troosolar' && formData.loanDetails ? 8.7 : 8); // Simple calc first, or back to Troosolar full calc
                     }}
                     className="w-full bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
                 >
-                    Proceed to Loan Calculator
+                    {formData.financingPath === 'troosolar' && formData.loanDetails
+                        ? 'Back to Full Loan Calculator'
+                        : 'Proceed to Loan Calculator'}
                 </button>
             </div>
         );
@@ -4768,6 +4778,9 @@ const BNPLFlow = () => {
                     bundlePrice={catalogSubtotal}
                     onConfirm={handleLoanConfirm}
                     loanConfig={loanConfig}
+                    breakdownMode="simple"
+                    initialDepositPercent={formData.loanDetails?.depositPercent}
+                    initialTenor={formData.loanDetails?.tenor}
                 />
                 <div className="mt-6 flex justify-center">
                     <button
@@ -4840,7 +4853,7 @@ const BNPLFlow = () => {
 
     const renderStep9 = () => (
         <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-            <button onClick={() => setStep(8)} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
+            <button onClick={() => setStep(8.7)} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
                 <ArrowLeft size={16} className="mr-2" /> Back
             </button>
             <h2 className="text-2xl font-bold mb-6 text-[#273e8e]">Review Your Loan Plan</h2>
@@ -4946,14 +4959,14 @@ const BNPLFlow = () => {
                                 },
                             }
                         }));
-                        setStep(9.5); // Financing Path before Final Application form
+                        setStep(11); // Final Application (Troosolar path after Review)
                     }}
                     className="flex-1 bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
                 >
                     Yes, Proceed
                 </button>
                 <button
-                    onClick={() => setStep(8)}
+                    onClick={() => setStep(8.7)}
                     className="flex-1 border-2 border-gray-300 text-gray-700 py-4 rounded-xl font-bold hover:bg-gray-50 transition-colors"
                 >
                     Adjust Plan
@@ -6025,23 +6038,80 @@ const BNPLFlow = () => {
         }
     };
 
-    const renderStep9_5 = () => (
+    const renderStep8_5 = () => (
         <BnplFinancingPathStep
             formData={formData}
             setFormData={setFormData}
-            financingPartners={financingPartners}
-            loadingPartners={loadingFinancingPartners}
-            onBack={() => setStep(9)}
-            onContinue={() => setStep(11)}
+            pathCopy={loanConfig?.financing_path}
+            onBack={() => setStep(8)}
+            onContinue={(path) => {
+                if (path === 'partner') {
+                    setStep(11); // Partner → Final Application (skip full calc + review)
+                } else {
+                    setStep(8.7); // Troosolar → full calculator (interest + fees) then Review
+                }
+            }}
         />
     );
+
+    const renderStep8_7 = () => {
+        const { overallGrandTotal, catalogSubtotal, overallNetTotal, overallVat } = getBnplPricingSnapshot();
+        const vatPercent = Number(loanConfig?.vat_percentage ?? 7.5);
+        return (
+            <div className="animate-fade-in max-w-4xl mx-auto">
+                <button
+                    onClick={() => setStep(8.5)}
+                    className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]"
+                >
+                    <ArrowLeft size={16} className="mr-2" /> Back
+                </button>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <h3 className="text-lg font-bold text-[#273e8e]">Invoice summary</h3>
+                        <button
+                            type="button"
+                            onClick={() => setStep(6.75)}
+                            className="text-sm font-semibold text-[#273e8e] hover:underline"
+                        >
+                            View full invoice
+                        </button>
+                    </div>
+                    <div className="space-y-1 text-sm text-gray-700">
+                        <div className="flex justify-between">
+                            <span>Sum-Total</span>
+                            <span className="font-medium">₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(overallNetTotal || 0)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>VAT ({vatPercent}%)</span>
+                            <span className="font-medium">₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(overallVat || 0)}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2 font-bold text-[#273e8e]">
+                            <span>Grand Total</span>
+                            <span>₦{new Intl.NumberFormat('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(overallGrandTotal || 0)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <LoanCalculator
+                    totalAmount={overallGrandTotal}
+                    bundlePrice={catalogSubtotal}
+                    onConfirm={handleTroosolarFullLoanConfirm}
+                    loanConfig={loanConfig}
+                    breakdownMode="full"
+                    initialDepositPercent={formData.loanDetails?.depositPercent}
+                    initialTenor={formData.loanDetails?.tenor}
+                />
+            </div>
+        );
+    };
 
     const renderStep11 = () => (
         <BnplFinalApplicationForm
             formData={formData}
             setFormData={setFormData}
             states={states}
-            onBack={() => setStep(9.5)}
+            onBack={() => setStep(formData.financingPath === 'partner' ? 8.5 : 9)}
             onContinue={() => setStep(10)}
             isValidSocialMediaIdentity={isValidSocialMediaIdentity}
             getSocialMediaVerificationUrl={getSocialMediaVerificationUrl}
@@ -7015,8 +7085,9 @@ const BNPLFlow = () => {
                             {step === 7 && renderStep7()}
                             {step === 7.5 && renderStep7_5()}
                             {step === 8 && renderStep8()}
+                            {step === 8.5 && renderStep8_5()}
+                            {step === 8.7 && renderStep8_7()}
                             {step === 10 && renderStep10()}
-                            {step === 9.5 && renderStep9_5()}
                             {step === 11 && renderStep11()}
                             {step === 12 && renderStep12()}
                             {step === 13 && renderStep13()}
