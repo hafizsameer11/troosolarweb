@@ -688,13 +688,30 @@ const BNPLFlow = () => {
     
     // Default credit check method when step 10 is reached
     React.useEffect(() => {
-        if (step === 10 && !formData.creditCheckMethod) {
-            setFormData(prev => ({
-                ...prev,
-                creditCheckMethod: prev.financingPath === 'partner' ? 'partner' : 'auto',
-            }));
+        if (step !== 10) return;
+        if (formData.financingPath === 'partner') {
+            if (formData.creditCheckMethod !== 'partner') {
+                setFormData((prev) => ({ ...prev, creditCheckMethod: 'partner' }));
+            }
+            return;
         }
-    }, [step]);
+        const ccmAll = loanConfig?.credit_check_method || {};
+        const isSmeCustomer = ['sme', 'commercial'].includes(String(formData.customerType || '').toLowerCase());
+        const segment = isSmeCustomer ? (ccmAll.sme || {}) : (ccmAll.residential || {});
+        const autoEnabled = segment.auto_enabled !== false;
+        const manualEnabled = segment.manual_enabled !== false;
+        const current = formData.creditCheckMethod;
+        const currentOk =
+            (current === 'auto' && autoEnabled) ||
+            (current === 'manual' && manualEnabled);
+        if (currentOk) return;
+        let next = '';
+        if (autoEnabled) next = 'auto';
+        else if (manualEnabled) next = 'manual';
+        if (next && next !== current) {
+            setFormData((prev) => ({ ...prev, creditCheckMethod: next }));
+        }
+    }, [step, formData.financingPath, formData.customerType, formData.creditCheckMethod, loanConfig]);
 
     React.useEffect(() => {
         if (step !== 10) return;
@@ -5608,63 +5625,108 @@ const BNPLFlow = () => {
                     </button>
                 )}
 
-                {phase === 'choose_method' && !isPartnerPath && (
+                {phase === 'choose_method' && !isPartnerPath && (() => {
+                    const ccmAll = loanConfig?.credit_check_method || {};
+                    const isSmeCustomer = ['sme', 'commercial'].includes(String(formData.customerType || '').toLowerCase());
+                    const segment = isSmeCustomer ? (ccmAll.sme || {}) : (ccmAll.residential || {});
+                    const intro = ccmAll.intro || 'Choose how you would like to complete your credit check.';
+                    const continueLabel = ccmAll.continue_label || 'Continue';
+                    const unavailableLabel = ccmAll.unavailable_label || 'Currently unavailable';
+                    const autoEnabled = segment.auto_enabled !== false;
+                    const manualEnabled = segment.manual_enabled !== false;
+                    const autoTitle = segment.auto_title || 'Connect your bank (Recommended)';
+                    const autoDescription = segment.auto_description || 'Link your account with Mono, pay the verification fee, then we run the credit check automatically.';
+                    const manualTitle = segment.manual_title || 'Manual review';
+                    const manualDescription = segment.manual_description || 'Pay the verification fee first, then upload your bank statement and selfie.';
+                    const selectedAuto = isAutoMethod && autoEnabled;
+                    const selectedManual = isManualMethod && manualEnabled;
+                    const canContinue = (formData.creditCheckMethod === 'auto' && autoEnabled)
+                        || (formData.creditCheckMethod === 'manual' && manualEnabled);
+
+                    return (
                     <>
-                        <p className="text-gray-600 mb-6">Choose how you would like to complete your credit check.</p>
+                        <p className="text-gray-600 mb-6 whitespace-pre-line">{intro}</p>
                         <div className="grid gap-4 mb-6 md:grid-cols-2">
                             <button
                                 type="button"
+                                disabled={!autoEnabled}
                                 onClick={() => {
+                                    if (!autoEnabled) return;
                                     setMonoFailed(false);
                                     setFormData((prev) => ({ ...prev, creditCheckMethod: 'auto' }));
                                 }}
                                 className={`p-6 rounded-xl border-2 text-left transition-colors ${
-                                    isAutoMethod
-                                        ? 'border-[#273e8e] bg-blue-50'
-                                        : 'border-gray-200 hover:border-[#273e8e]/50'
+                                    !autoEnabled
+                                        ? 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed'
+                                        : selectedAuto
+                                            ? 'border-[#273e8e] bg-blue-50'
+                                            : 'border-gray-200 hover:border-[#273e8e]/50'
                                 }`}
                             >
-                                <div className="flex items-center mb-2">
-                                    <CheckCircle size={20} className="text-[#273e8e]" />
-                                    <span className="ml-2 font-bold text-gray-800">Connect your bank (Recommended)</span>
+                                <div className="flex items-center mb-2 flex-wrap gap-2">
+                                    <CheckCircle size={20} className={autoEnabled ? 'text-[#273e8e]' : 'text-gray-400'} />
+                                    <span className={`ml-2 font-bold ${autoEnabled ? 'text-gray-800' : 'text-gray-500'}`}>{autoTitle}</span>
+                                    {!autoEnabled && (
+                                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+                                            {unavailableLabel}
+                                        </span>
+                                    )}
                                 </div>
-                                <p className="text-sm ml-7 text-gray-500">
-                                    Link your account with Mono, pay the verification fee, then we run the credit check automatically.
+                                <p className={`text-sm ml-7 ${autoEnabled ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    {autoDescription}
                                 </p>
                             </button>
 
                             <button
                                 type="button"
-                                onClick={() => setFormData((prev) => ({ ...prev, creditCheckMethod: 'manual' }))}
+                                disabled={!manualEnabled}
+                                onClick={() => {
+                                    if (!manualEnabled) return;
+                                    setFormData((prev) => ({ ...prev, creditCheckMethod: 'manual' }));
+                                }}
                                 className={`p-6 rounded-xl border-2 text-left transition-colors ${
-                                    isManualMethod
-                                        ? 'border-[#273e8e] bg-blue-50'
-                                        : 'border-gray-200 hover:border-[#273e8e]/50'
+                                    !manualEnabled
+                                        ? 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed'
+                                        : selectedManual
+                                            ? 'border-[#273e8e] bg-blue-50'
+                                            : 'border-gray-200 hover:border-[#273e8e]/50'
                                 }`}
                             >
-                                <div className="flex items-center mb-2">
-                                    <CheckCircle size={20} className="text-[#273e8e]" />
-                                    <span className="ml-2 font-bold text-gray-800">Manual review</span>
+                                <div className="flex items-center mb-2 flex-wrap gap-2">
+                                    <CheckCircle size={20} className={manualEnabled ? 'text-[#273e8e]' : 'text-gray-400'} />
+                                    <span className={`ml-2 font-bold ${manualEnabled ? 'text-gray-800' : 'text-gray-500'}`}>{manualTitle}</span>
+                                    {!manualEnabled && (
+                                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+                                            {unavailableLabel}
+                                        </span>
+                                    )}
                                 </div>
-                                <p className="text-sm ml-7 text-gray-500">
-                                    Pay the verification fee first, then upload your bank statement and selfie.
+                                <p className={`text-sm ml-7 ${manualEnabled ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    {manualDescription}
                                 </p>
                             </button>
                         </div>
 
+                        {!autoEnabled && !manualEnabled && (
+                            <p className="text-sm text-amber-700 mb-4">
+                                No credit check methods are available to select right now. Please contact support.
+                            </p>
+                        )}
+
                         <button
                             onClick={advanceFromMethodChoice}
-                            disabled={loading || processingCreditCheckPayment || !formData.creditCheckMethod}
+                            disabled={loading || processingCreditCheckPayment || !canContinue}
                             className={`w-full py-4 rounded-xl font-bold transition-colors ${
-                                loading || processingCreditCheckPayment || !formData.creditCheckMethod
+                                loading || processingCreditCheckPayment || !canContinue
                                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                     : 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
                             }`}
                         >
-                            Continue
+                            {continueLabel}
                         </button>
                     </>
-                )}
+                    );
+                })()}
 
                 {phase === 'mono_link' && !isPartnerPath && (
                     <>
