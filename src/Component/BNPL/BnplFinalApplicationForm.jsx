@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ArrowLeft, X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ArrowLeft, X, Camera } from 'lucide-react';
 import {
   financeAgreementTextForType,
   ID_TYPE_OPTIONS,
@@ -13,7 +13,7 @@ const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
 
 /**
  * BNPL Final Application — residential vs SME field sets + Finance Agreement.
- * Financing Path is selected on the previous step (before this form).
+ * Partner Financing also collects bank statement + live selfie on this form.
  */
 const BnplFinalApplicationForm = ({
   formData,
@@ -25,10 +25,63 @@ const BnplFinalApplicationForm = ({
   getSocialMediaVerificationUrl,
 }) => {
   const isSme = String(formData.customerType || '').toLowerCase() === 'sme';
+  const isPartnerPath = String(formData.financingPath || '').toLowerCase() === 'partner';
   const [showAgreement, setShowAgreement] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+  const cameraVideoRef = useRef(null);
+  const cameraCanvasRef = useRef(null);
   const agreementText = financeAgreementTextForType(formData.customerType);
 
   const set = (patch) => setFormData((prev) => ({ ...prev, ...patch }));
+
+  useEffect(() => {
+    if (cameraStream && cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
+
+  useEffect(() => () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+    }
+  }, [cameraStream]);
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      setCameraStream(null);
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      stopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
+      setCameraStream(stream);
+    } catch {
+      alert('Unable to access camera. You can upload a selfie image instead.');
+    }
+  };
+
+  const captureLivePhoto = () => {
+    const video = cameraVideoRef.current;
+    const canvas = cameraCanvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], `live-selfie-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const previewUrl = canvas.toDataURL('image/jpeg');
+      set({ livePhoto: file, livePhotoPreview: previewUrl });
+      stopCamera();
+    }, 'image/jpeg', 0.9);
+  };
 
   const validate = () => {
     const requiredPersonal = [
@@ -94,6 +147,16 @@ const BnplFinalApplicationForm = ({
           alert('Please fill in all required business details.');
           return false;
         }
+      }
+    }
+    if (isPartnerPath) {
+      if (!formData.bankStatement) {
+        alert('Please upload your bank statement (last 6 months) for partner financing.');
+        return false;
+      }
+      if (!formData.livePhoto) {
+        alert('Please upload or capture a live selfie for partner financing.');
+        return false;
       }
     }
     if (!formData.financeAgreementAccepted) {
@@ -407,6 +470,122 @@ const BnplFinalApplicationForm = ({
               <div className="md:col-span-2">
                 <label className={labelClass}>Nature of Business *</label>
                 <input className={fieldClass} value={formData.natureOfBusiness || ''} onChange={(e) => set({ natureOfBusiness: e.target.value })} required />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {isPartnerPath && (
+          <section>
+            <h3 className="text-lg font-bold mb-2 text-gray-800 border-b pb-2">Partner Financing Documents</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Required for Partner Financing only. Upload your bank statement and take or upload a live selfie.
+            </p>
+            <div className="space-y-5">
+              <div>
+                <label className={labelClass}>Bank Statement (Last 6 Months) *</label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"
+                  className="w-full p-3 border rounded-lg file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#273e8e] file:text-white hover:file:bg-[#1a2b6b]"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 10 * 1024 * 1024) {
+                      alert('Bank statement file size must be less than 10MB');
+                      e.target.value = '';
+                      return;
+                    }
+                    set({ bankStatement: file });
+                  }}
+                />
+                {formData.bankStatement && (
+                  <p className="text-sm text-green-600 mt-1">✓ {formData.bankStatement.name}</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">Accepted formats: PDF, JPG, PNG (Max 10MB)</p>
+              </div>
+
+              <div>
+                <label className={labelClass}>Live Photo / Selfie *</label>
+                {cameraStream ? (
+                  <div className="relative rounded-lg overflow-hidden border-2 border-[#273e8e] mb-2">
+                    <video
+                      ref={cameraVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-64 object-cover bg-black"
+                    />
+                    <canvas ref={cameraCanvasRef} className="hidden" />
+                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={captureLivePhoto}
+                        className="bg-white text-[#273e8e] rounded-full p-3 shadow-lg hover:bg-gray-100 transition-colors border-2 border-[#273e8e]"
+                        title="Capture Photo"
+                      >
+                        <Camera size={28} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="bg-red-500 text-white rounded-full p-3 shadow-lg hover:bg-red-600 transition-colors"
+                        title="Close Camera"
+                      >
+                        <X size={28} />
+                      </button>
+                    </div>
+                  </div>
+                ) : formData.livePhoto ? (
+                  <div className="relative rounded-lg overflow-hidden border border-green-300 bg-green-50 mb-2">
+                    <img
+                      src={formData.livePhotoPreview || URL.createObjectURL(formData.livePhoto)}
+                      alt="Live Photo Preview"
+                      className="w-full h-64 object-cover"
+                    />
+                    <div className="absolute top-2 right-2">
+                      <button
+                        type="button"
+                        onClick={() => set({ livePhoto: null, livePhotoPreview: null })}
+                        className="bg-red-500 text-white rounded-full p-1.5 shadow hover:bg-red-600"
+                        title="Remove Photo"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <p className="text-sm text-green-700 font-medium p-2 text-center">✓ Live photo captured</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-3 mb-2">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#273e8e] text-white text-sm font-medium hover:bg-[#1a2b6b]"
+                    >
+                      <Camera size={16} /> Take live selfie
+                    </button>
+                    <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50">
+                      Upload selfie image
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 5 * 1024 * 1024) {
+                            alert('Selfie file size must be less than 5MB');
+                            e.target.value = '';
+                            return;
+                          }
+                          const previewUrl = URL.createObjectURL(file);
+                          set({ livePhoto: file, livePhotoPreview: previewUrl });
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">JPG or PNG (Max 5MB). Prefer a clear live selfie.</p>
               </div>
             </div>
           </section>

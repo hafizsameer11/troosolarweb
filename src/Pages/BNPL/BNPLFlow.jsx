@@ -5985,8 +5985,16 @@ const BNPLFlow = () => {
                 compulsoryAddOns.forEach(id => formDataToSend.append('add_on_ids[]', id));
             }
 
-            // Files - Only required for manual credit check or when Mono has failed (not partner path)
-            if (financingPath !== 'partner' && (formData.creditCheckMethod === 'manual' || monoFailed) && !skipCreditCheckFee) {
+            // Files — required for partner path (collected on Final Application) and Troosolar manual/failed Mono
+            if (financingPath === 'partner') {
+                if (!formData.bankStatement || !formData.livePhoto) {
+                    alert("Bank statement and live selfie are required for Partner Financing. Please upload them on the Final Application form.");
+                    setLoading(false);
+                    return;
+                }
+                formDataToSend.append('bank_statement', formData.bankStatement);
+                formDataToSend.append('live_photo', formData.livePhoto);
+            } else if ((formData.creditCheckMethod === 'manual' || monoFailed) && !skipCreditCheckFee) {
                 if (!formData.bankStatement || !formData.livePhoto) {
                     alert("Bank statement and live photo are required for manual credit check. Please upload both documents.");
                     setLoading(false);
