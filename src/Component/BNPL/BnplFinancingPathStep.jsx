@@ -2,19 +2,23 @@ import React, { useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 
 const DEFAULT_COPY = {
+  title: 'Financing Path',
   intro:
     'Choose how you want to finance this order before completing the Final Application. Partner financiers return a decision in 24–72 hours after credit-check payment; Troosolar continues the full BNPL process flow.',
+  back_label: 'Back',
   troosolar_title: 'Troosolar',
   troosolar_description:
     "Continue with Troosolar's BNPL process (credit check, approval, guarantor flow).",
   partner_title: 'Partner Financing',
   partner_description:
     "Partner financier — we'll get back to you within 24–72 hours after credit-check payment.",
+  continue_troosolar_label: 'Continue to Full Loan Plan',
+  continue_partner_label: 'Continue to Final Application',
 };
 
 /**
  * Exactly two options: Troosolar vs Partner Financing.
- * Labels/descriptions come from Admin → BNPL → Loan Settings (financing_path copy).
+ * Every visible string comes from Admin → BNPL → Loan Settings.
  */
 const BnplFinancingPathStep = ({
   formData,
@@ -58,15 +62,15 @@ const BnplFinancingPathStep = ({
 
   const selected = formData.financingPath === 'partner' ? 'partner' : 'troosolar';
   const continueLabel =
-    selected === 'partner' ? 'Continue to Final Application' : 'Continue to Full Loan Plan';
+    selected === 'partner' ? copy.continue_partner_label : copy.continue_troosolar_label;
 
   return (
     <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
       <button type="button" onClick={onBack} className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]">
-        <ArrowLeft size={16} className="mr-2" /> Back
+        <ArrowLeft size={16} className="mr-2" /> {copy.back_label}
       </button>
-      <h2 className="text-2xl font-bold mb-2 text-[#273e8e]">Financing Path</h2>
-      <p className="text-sm text-gray-600 mb-6">{copy.intro}</p>
+      <h2 className="text-2xl font-bold mb-2 text-[#273e8e]">{copy.title}</h2>
+      <p className="text-sm text-gray-600 mb-6 whitespace-pre-line">{copy.intro}</p>
 
       <div className="space-y-3 mb-8">
         {options.map((opt) => {
@@ -90,7 +94,7 @@ const BnplFinancingPathStep = ({
               />
               <div>
                 <p className="font-semibold text-gray-900">{opt.title}</p>
-                <p className="text-sm text-gray-600">{opt.description}</p>
+                <p className="text-sm text-gray-600 whitespace-pre-line">{opt.description}</p>
               </div>
             </label>
           );
