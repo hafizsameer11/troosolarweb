@@ -14,11 +14,14 @@ const DEFAULT_COPY = {
     "Partner financier — we'll get back to you within 24–72 hours after credit-check payment.",
   continue_troosolar_label: 'Continue to Full Loan Plan',
   continue_partner_label: 'Continue to Final Application',
+  troosolar_enabled: true,
+  partner_enabled: true,
+  unavailable_label: 'Currently unavailable',
 };
 
 /**
  * Exactly two options: Troosolar vs Partner Financing.
- * Every visible string comes from Admin → BNPL → Loan Settings.
+ * Disabled options stay visible but cannot be selected (admin toggle).
  */
 const BnplFinancingPathStep = ({
   formData,
@@ -29,22 +32,42 @@ const BnplFinancingPathStep = ({
 }) => {
   const set = (patch) => setFormData((prev) => ({ ...prev, ...patch }));
   const copy = { ...DEFAULT_COPY, ...(pathCopy || {}) };
+  const troosolarEnabled = copy.troosolar_enabled !== false;
+  const partnerEnabled = copy.partner_enabled !== false;
 
   useEffect(() => {
-    if (formData.financingPath === 'partner' || formData.financingPath === 'troosolar') return;
-    set({
-      financingPath: 'troosolar',
-      financingPartnerId: null,
-    });
+    const current = formData.financingPath;
+    const currentOk =
+      (current === 'troosolar' && troosolarEnabled) ||
+      (current === 'partner' && partnerEnabled);
+
+    if (currentOk) return;
+
+    if (troosolarEnabled) {
+      set({ financingPath: 'troosolar', financingPartnerId: null });
+    } else if (partnerEnabled) {
+      set({ financingPath: 'partner', financingPartnerId: null });
+    } else {
+      set({ financingPath: null, financingPartnerId: null });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [troosolarEnabled, partnerEnabled]);
 
   const handleContinue = () => {
-    if (formData.financingPath !== 'partner' && formData.financingPath !== 'troosolar') {
+    const path = formData.financingPath;
+    if (path === 'troosolar' && !troosolarEnabled) {
+      alert(`${copy.troosolar_title} is currently unavailable. Please choose another option.`);
+      return;
+    }
+    if (path === 'partner' && !partnerEnabled) {
+      alert(`${copy.partner_title} is currently unavailable. Please choose another option.`);
+      return;
+    }
+    if (path !== 'partner' && path !== 'troosolar') {
       alert('Please select a financing option to continue.');
       return;
     }
-    onContinue(formData.financingPath);
+    onContinue(path);
   };
 
   const options = [
@@ -52,17 +75,28 @@ const BnplFinancingPathStep = ({
       key: 'troosolar',
       title: copy.troosolar_title,
       description: copy.troosolar_description,
+      enabled: troosolarEnabled,
     },
     {
       key: 'partner',
       title: copy.partner_title,
       description: copy.partner_description,
+      enabled: partnerEnabled,
     },
   ];
 
-  const selected = formData.financingPath === 'partner' ? 'partner' : 'troosolar';
+  const selected =
+    formData.financingPath === 'partner'
+      ? 'partner'
+      : formData.financingPath === 'troosolar'
+        ? 'troosolar'
+        : null;
+  const selectedEnabled =
+    (selected === 'troosolar' && troosolarEnabled) ||
+    (selected === 'partner' && partnerEnabled);
   const continueLabel =
     selected === 'partner' ? copy.continue_partner_label : copy.continue_troosolar_label;
+  const canContinue = !!selectedEnabled;
 
   return (
     <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
@@ -75,36 +109,65 @@ const BnplFinancingPathStep = ({
       <div className="space-y-3 mb-8">
         {options.map((opt) => {
           const isSelected = selected === opt.key;
+          const disabled = !opt.enabled;
           return (
             <label
               key={opt.key}
-              className={`flex items-start gap-3 p-4 border-2 rounded-xl cursor-pointer ${isSelected ? 'border-[#273e8e] bg-blue-50' : 'border-gray-200'}`}
+              className={`flex items-start gap-3 p-4 border-2 rounded-xl ${
+                disabled
+                  ? 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed'
+                  : isSelected
+                    ? 'border-[#273e8e] bg-blue-50 cursor-pointer'
+                    : 'border-gray-200 cursor-pointer'
+              }`}
             >
               <input
                 type="radio"
                 name="financingPath"
                 checked={isSelected}
-                onChange={() =>
+                disabled={disabled}
+                onChange={() => {
+                  if (disabled) return;
                   set({
                     financingPath: opt.key,
                     financingPartnerId: null,
-                  })
-                }
+                  });
+                }}
                 className="mt-1"
               />
-              <div>
-                <p className="font-semibold text-gray-900">{opt.title}</p>
-                <p className="text-sm text-gray-600 whitespace-pre-line">{opt.description}</p>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className={`font-semibold ${disabled ? 'text-gray-500' : 'text-gray-900'}`}>{opt.title}</p>
+                  {disabled && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+                      {copy.unavailable_label}
+                    </span>
+                  )}
+                </div>
+                <p className={`text-sm whitespace-pre-line ${disabled ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {opt.description}
+                </p>
               </div>
             </label>
           );
         })}
       </div>
 
+      {!troosolarEnabled && !partnerEnabled && (
+        <p className="text-sm text-amber-700 mb-4">
+          No financing options are available to select right now. Please contact support.
+        </p>
+      )}
+
       <button
         type="button"
         onClick={handleContinue}
-        className="w-full py-4 rounded-xl font-bold transition-colors bg-[#273e8e] text-white hover:bg-[#1a2b6b]"
+        disabled={!canContinue}
+        className={`w-full py-4 rounded-xl font-bold transition-colors ${
+          canContinue
+            ? 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
+            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+        }`}
       >
         {continueLabel}
       </button>
