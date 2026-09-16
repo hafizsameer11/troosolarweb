@@ -23,6 +23,7 @@ const BnplFinalApplicationForm = ({
   onContinue,
   isValidSocialMediaIdentity,
   getSocialMediaVerificationUrl,
+  financeAgreementCopy,
 }) => {
   const isSme = String(formData.customerType || '').toLowerCase() === 'sme';
   const isPartnerPath = String(formData.financingPath || '').toLowerCase() === 'partner';
@@ -30,7 +31,19 @@ const BnplFinalApplicationForm = ({
   const [cameraStream, setCameraStream] = useState(null);
   const cameraVideoRef = useRef(null);
   const cameraCanvasRef = useRef(null);
-  const agreementText = financeAgreementTextForType(formData.customerType);
+  const agreementCopy = {
+    modal_title: 'Finance Agreement',
+    checkbox_prefix: 'I accept the',
+    link_label: 'Finance Agreement',
+    close_label: 'Close',
+    accept_label: 'I Accept',
+    ...(financeAgreementCopy || {}),
+  };
+  const agreementText =
+    (String(formData.customerType || '').toLowerCase() === 'sme' ||
+      String(formData.customerType || '').toLowerCase() === 'commercial')
+      ? (agreementCopy.sme_text || financeAgreementTextForType('sme'))
+      : (agreementCopy.residential_text || financeAgreementTextForType('residential'));
 
   const set = (patch) => setFormData((prev) => ({ ...prev, ...patch }));
 
@@ -601,7 +614,7 @@ const BnplFinalApplicationForm = ({
               onChange={(e) => set({ financeAgreementAccepted: e.target.checked })}
             />
             <span>
-              I accept the{' '}
+              {agreementCopy.checkbox_prefix}{' '}
               <button
                 type="button"
                 className="text-[#273e8e] underline font-semibold"
@@ -610,7 +623,7 @@ const BnplFinalApplicationForm = ({
                   setShowAgreement(true);
                 }}
               >
-                Finance Agreement
+                {agreementCopy.link_label}
               </button>
             </span>
           </label>
@@ -625,7 +638,7 @@ const BnplFinalApplicationForm = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-xl">
             <div className="flex items-center justify-between px-5 py-4 border-b">
-              <h3 className="text-lg font-bold text-[#273e8e]">Finance Agreement</h3>
+              <h3 className="text-lg font-bold text-[#273e8e]">{agreementCopy.modal_title}</h3>
               <button type="button" onClick={() => setShowAgreement(false)} className="text-gray-500 hover:text-gray-800">
                 <X size={20} />
               </button>
@@ -635,7 +648,7 @@ const BnplFinalApplicationForm = ({
             </div>
             <div className="px-5 py-4 border-t flex justify-end gap-3">
               <button type="button" onClick={() => setShowAgreement(false)} className="px-4 py-2 rounded-lg border text-gray-700">
-                Close
+                {agreementCopy.close_label}
               </button>
               <button
                 type="button"
@@ -645,7 +658,7 @@ const BnplFinalApplicationForm = ({
                 }}
                 className="px-4 py-2 rounded-lg bg-[#273e8e] text-white font-medium"
               >
-                I Accept
+                {agreementCopy.accept_label}
               </button>
             </div>
           </div>

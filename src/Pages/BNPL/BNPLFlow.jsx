@@ -6123,6 +6123,7 @@ const BNPLFlow = () => {
             onContinue={() => setStep(10)}
             isValidSocialMediaIdentity={isValidSocialMediaIdentity}
             getSocialMediaVerificationUrl={getSocialMediaVerificationUrl}
+            financeAgreementCopy={loanConfig?.finance_agreement}
         />
     );
 
