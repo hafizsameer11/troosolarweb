@@ -6281,6 +6281,7 @@ const BNPLFlow = () => {
                     onConfirm={handleTroosolarFullLoanConfirm}
                     loanConfig={loanConfig}
                     breakdownMode="full"
+                    excludeDepositPercents={[10, 20]}
                     initialDepositPercent={formData.loanDetails?.depositPercent}
                     initialTenor={formData.loanDetails?.tenor}
                 />
