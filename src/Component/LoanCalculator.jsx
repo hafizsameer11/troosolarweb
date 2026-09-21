@@ -21,6 +21,8 @@ const LoanCalculator = ({
   loanConfig: loanConfigProp,
   /** BNPL first calculator uses 'simple' (3 lines). Troosolar full plan uses 'full'. */
   breakdownMode = 'full',
+  /** Percents to hide (e.g. Troosolar full calc: exclude 10 and 20). First/simple calc keeps all admin options. */
+  excludeDepositPercents = [],
   initialDepositPercent,
   initialTenor,
 }) => {
@@ -81,9 +83,16 @@ const LoanCalculator = ({
   const allowedTenors = useMemo(() => (Array.isArray(config?.loan_durations) && config.loan_durations.length > 0
     ? config.loan_durations
     : [3, 6, 9, 12]), [config?.loan_durations]);
-  const downPaymentOptions = useMemo(() => (Array.isArray(config?.down_payment_options) && config.down_payment_options.length > 0
-    ? [...new Set(config.down_payment_options.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v >= 0 && v <= 100))].sort((a, b) => a - b)
-    : [30, 40, 50, 60, 70, 80].filter((p) => p >= minDepositPercent && p <= maxDepositPercent)), [config?.down_payment_options, minDepositPercent, maxDepositPercent]);
+  const excludedDeposits = useMemo(
+    () => new Set((excludeDepositPercents || []).map((v) => Number(v)).filter((v) => Number.isFinite(v))),
+    [excludeDepositPercents]
+  );
+  const downPaymentOptions = useMemo(() => {
+    const raw = Array.isArray(config?.down_payment_options) && config.down_payment_options.length > 0
+      ? [...new Set(config.down_payment_options.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v >= 0 && v <= 100))]
+      : [30, 40, 50, 60, 70, 80].filter((p) => p >= minDepositPercent && p <= maxDepositPercent);
+    return raw.filter((p) => !excludedDeposits.has(p)).sort((a, b) => a - b);
+  }, [config?.down_payment_options, minDepositPercent, maxDepositPercent, excludedDeposits]);
 
   const [depositPercent, setDepositPercent] = useState(
     Number.isFinite(Number(initialDepositPercent)) ? Number(initialDepositPercent) : (downPaymentOptions[0] ?? minDepositPercent)
