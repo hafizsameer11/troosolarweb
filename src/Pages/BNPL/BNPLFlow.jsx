@@ -272,6 +272,8 @@ const BNPLFlow = () => {
     const [checkingAuditStatus, setCheckingAuditStatus] = useState(false);
     const [guarantorId, setGuarantorId] = useState(null);
     const [invoiceData, setInvoiceData] = useState(null);
+    /** Where Invoice (6.75) was opened from — Back must return here, not jump to full calculator. */
+    const [invoiceOriginStep, setInvoiceOriginStep] = useState(6.5);
     const [processingPayment, setProcessingPayment] = useState(false);
     const [paymentResult, setPaymentResult] = useState(null); // 'success' | 'failed' | null
     const [showCreditCheckFeeModal, setShowCreditCheckFeeModal] = useState(false);
@@ -4197,6 +4199,7 @@ const BNPLFlow = () => {
                             setStep(8);
                             return;
                         }
+                        setInvoiceOriginStep(6.5);
                         setStep(6.75); // Go to Invoice
                     }}
                     className="w-full bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
@@ -4483,7 +4486,7 @@ const BNPLFlow = () => {
         return (
             <div className="animate-fade-in max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
                 <button
-                    onClick={() => setStep(formData.financingPath === 'troosolar' && formData.loanDetails ? 8.7 : 6.5)}
+                    onClick={() => setStep(invoiceOriginStep || 6.5)}
                     className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]"
                 >
                     <ArrowLeft size={16} className="mr-2" /> Back
@@ -4587,11 +4590,12 @@ const BNPLFlow = () => {
                             alert(`Your order total (₦${overallGrandTotal.toLocaleString()}) does not meet the minimum ₦${minOrderValue.toLocaleString()} amount required for credit financing. To qualify for Buy Now, Pay Later, please add more items to your cart. Thank you.`);
                             return;
                         }
-                        setStep(formData.financingPath === 'troosolar' && formData.loanDetails ? 8.7 : 8); // Simple calc first, or back to Troosolar full calc
+                        // Returning from full calculator "View invoice" → go back there; first visit → simple calc
+                        setStep(invoiceOriginStep === 8.7 ? 8.7 : 8);
                     }}
                     className="w-full bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors"
                 >
-                    {formData.financingPath === 'troosolar' && formData.loanDetails
+                    {invoiceOriginStep === 8.7
                         ? 'Back to Full Loan Calculator'
                         : 'Proceed to Loan Calculator'}
                 </button>
@@ -4785,7 +4789,15 @@ const BNPLFlow = () => {
         return (
             <div className="animate-fade-in max-w-4xl mx-auto">
                 <button
-                    onClick={() => setStep(formData.optionType === 'audit' ? 6.5 : 6.75)}
+                    onClick={() => {
+                        if (formData.optionType === 'audit') {
+                            setStep(6.5);
+                            return;
+                        }
+                        // Returning to first invoice from simple calculator — Back from invoice should go to order list
+                        setInvoiceOriginStep(6.5);
+                        setStep(6.75);
+                    }}
                     className="mb-6 flex items-center text-gray-500 hover:text-[#273e8e]"
                 >
                     <ArrowLeft size={16} className="mr-2" /> Back
@@ -6144,7 +6156,10 @@ const BNPLFlow = () => {
                         <h3 className="text-lg font-bold text-[#273e8e]">Invoice summary</h3>
                         <button
                             type="button"
-                            onClick={() => setStep(6.75)}
+                            onClick={() => {
+                                setInvoiceOriginStep(8.7);
+                                setStep(6.75);
+                            }}
                             className="text-sm font-semibold text-[#273e8e] hover:underline"
                         >
                             View full invoice
