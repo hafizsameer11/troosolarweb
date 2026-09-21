@@ -5578,12 +5578,15 @@ const BNPLFlow = () => {
                     <ArrowLeft size={16} className="mr-2" /> Back
                 </button>
                 <h2 className="text-2xl font-bold mb-2 text-[#273e8e]">
-                    {isPartnerPath ? 'Credit Check Fee' : 'Credit Check'}
+                    {isPartnerPath
+                        ? (loanConfig?.credit_check_method?.partner?.fee_title || 'Credit Check Fee')
+                        : 'Credit Check'}
                 </h2>
 
                 {isPartnerPath && (
-                    <p className="text-gray-600 mb-6">
-                        Pay the credit check fee to send your application to your selected financing partner. We&apos;ll get back to you within 24–72 hours.
+                    <p className="text-gray-600 mb-6 whitespace-pre-line">
+                        {loanConfig?.credit_check_method?.partner?.fee_intro
+                            || "Pay the credit check fee to send your application to your selected financing partner. We'll get back to you within 2 - 5 working days."}
                     </p>
                 )}
 
@@ -6260,12 +6263,14 @@ const BNPLFlow = () => {
                 <p className="text-xl font-medium text-gray-800 mb-4">Your application is under review.</p>
                 <p className="text-gray-600 mb-4">
                     {formData.financingPath === 'partner'
-                        ? 'We have received your application for partner financing. We will get back to you within 24–72 hours.'
+                        ? (loanConfig?.credit_check_method?.partner?.success_message
+                            || 'We have received your application for partner financing. We will get back to you within 2 - 5 working days.')
                         : 'We are processing your details. This usually takes 24-72 hours.'}
                 </p>
                 {formData.financingPath === 'partner' && (
-                    <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4">
-                        Your application was routed to a financing partner. Troosolar&apos;s internal guarantor flow does not continue for this path.
+                    <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4 whitespace-pre-line">
+                        {loanConfig?.credit_check_method?.partner?.routed_note
+                            || "Your application was routed to a financing partner. Troosolar's internal guarantor flow does not continue for this path."}
                     </p>
                 )}
                 {formData.financingPath !== 'partner' && formData.creditCheckMethod === 'auto' && (
