@@ -709,12 +709,28 @@ const BNPLFlow = () => {
                 auto_description: 'Link your business account with Mono, pay the verification fee, then we run the credit check automatically.',
                 manual_title: 'Manual review',
                 manual_description: 'Pay the verification fee first, then upload your bank statement and selfie.',
+                manual_upload_intro: 'Upload your business documents for manual credit review.',
+                manual_docs_title: 'Required Documents',
+                manual_bank_label: 'Business Bank Statement (Last 6 Months)',
+                manual_bank_hint: 'Accepted formats: PDF, JPG, PNG (Max 10MB)',
+                manual_selfie_label: 'Live Photo / Selfie',
+                manual_selfie_button: 'Tap to Open Camera & Take Selfie',
+                manual_selfie_hint: 'A live selfie is required for identity verification.',
+                manual_submit_label: 'Submit for Manual Review',
             }
             : {
                 auto_title: 'Connect your bank (Recommended)',
                 auto_description: 'Link your account with Mono, pay the verification fee, then we run the credit check automatically.',
                 manual_title: 'Manual review',
                 manual_description: 'Pay the verification fee first, then upload your bank statement and selfie.',
+                manual_upload_intro: 'Upload your documents for manual credit review.',
+                manual_docs_title: 'Required Documents',
+                manual_bank_label: 'Bank Statement (Last 6 Months)',
+                manual_bank_hint: 'Accepted formats: PDF, JPG, PNG (Max 10MB)',
+                manual_selfie_label: 'Live Photo / Selfie',
+                manual_selfie_button: 'Tap to Open Camera & Take Selfie',
+                manual_selfie_hint: 'A live selfie is required for identity verification.',
+                manual_submit_label: 'Submit for Manual Review',
             };
         return {
             isSmeCustomer,
@@ -727,6 +743,14 @@ const BNPLFlow = () => {
             auto_description: segment.auto_description || defaults.auto_description,
             manual_title: segment.manual_title || defaults.manual_title,
             manual_description: segment.manual_description || defaults.manual_description,
+            manual_upload_intro: segment.manual_upload_intro || defaults.manual_upload_intro,
+            manual_docs_title: segment.manual_docs_title || defaults.manual_docs_title,
+            manual_bank_label: segment.manual_bank_label || defaults.manual_bank_label,
+            manual_bank_hint: segment.manual_bank_hint || defaults.manual_bank_hint,
+            manual_selfie_label: segment.manual_selfie_label || defaults.manual_selfie_label,
+            manual_selfie_button: segment.manual_selfie_button || defaults.manual_selfie_button,
+            manual_selfie_hint: segment.manual_selfie_hint || defaults.manual_selfie_hint,
+            manual_submit_label: segment.manual_submit_label || defaults.manual_submit_label,
         };
     };
     
@@ -5393,9 +5417,11 @@ const BNPLFlow = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [step, searchParams]);
 
-    const renderManualUploadSection = () => (
+    const renderManualUploadSection = () => {
+        const copy = getCreditCheckMethodCopy(formData.customerType);
+        return (
         <div className="space-y-4 mb-6">
-            <h3 className="text-lg font-bold text-gray-800 border-b pb-2">Required Documents</h3>
+            <h3 className="text-lg font-bold text-gray-800 border-b pb-2">{copy.manual_docs_title}</h3>
             {monoFailed && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
                     <p className="text-sm text-yellow-800 font-medium">
@@ -5406,7 +5432,7 @@ const BNPLFlow = () => {
 
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Bank Statement (Last 6 Months) <span className="text-red-500">*</span>
+                    {copy.manual_bank_label} <span className="text-red-500">*</span>
                 </label>
                 <input
                     type="file"
@@ -5431,13 +5457,13 @@ const BNPLFlow = () => {
                     </p>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                    Accepted formats: PDF, JPG, PNG (Max 10MB)
+                    {copy.manual_bank_hint}
                 </p>
             </div>
 
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Live Photo / Selfie <span className="text-red-500">*</span>
+                    {copy.manual_selfie_label} <span className="text-red-500">*</span>
                 </label>
 
                 {cameraStream ? (
@@ -5499,7 +5525,7 @@ const BNPLFlow = () => {
                         className="w-full p-6 border-2 border-dashed border-[#273e8e] rounded-lg bg-[#273e8e]/5 hover:bg-[#273e8e]/10 transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer"
                     >
                         <Camera size={40} className="text-[#273e8e]" />
-                        <span className="text-[#273e8e] font-semibold">Tap to Open Camera & Take Selfie</span>
+                        <span className="text-[#273e8e] font-semibold">{copy.manual_selfie_button}</span>
                         <span className="text-xs text-gray-500">Your camera will open to capture a live photo</span>
                     </button>
                 )}
@@ -5508,11 +5534,12 @@ const BNPLFlow = () => {
                     <p className="text-sm text-red-500 mt-1">{cameraError}</p>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                    A live selfie is required for identity verification.
+                    {copy.manual_selfie_hint}
                 </p>
             </div>
         </div>
-    );
+        );
+    };
 
     const renderCreditCheckFeeSection = () => {
         const creditCheckFee = getCreditCheckFee();
@@ -5875,11 +5902,13 @@ const BNPLFlow = () => {
                     </>
                 )}
 
-                {phase === 'manual_upload' && !isPartnerPath && (
+                {phase === 'manual_upload' && !isPartnerPath && (() => {
+                    const copy = getCreditCheckMethodCopy(formData.customerType);
+                    return (
                     <>
                         <p className="text-gray-600 mb-6">
                             {creditCheckFeePaid || skipCreditCheckFee
-                                ? 'Upload your documents for manual credit review.'
+                                ? copy.manual_upload_intro
                                 : 'Complete payment first to unlock document upload.'}
                         </p>
                         {(creditCheckFeePaid || skipCreditCheckFee) && renderManualUploadSection()}
@@ -5888,11 +5917,11 @@ const BNPLFlow = () => {
                             onClick={(e) => {
                                 e.preventDefault();
                                 if (!formData.bankStatement) {
-                                    alert('Please upload your bank statement (Last 6 Months)');
+                                    alert(`Please upload your ${copy.manual_bank_label}`);
                                     return;
                                 }
                                 if (!formData.livePhoto) {
-                                    alert('Please upload your live photo / selfie');
+                                    alert(`Please upload your ${copy.manual_selfie_label}`);
                                     return;
                                 }
                                 const fakeEvent = { preventDefault: () => {} };
@@ -5915,10 +5944,11 @@ const BNPLFlow = () => {
                                     : 'bg-[#273e8e] text-white hover:bg-[#1a2b6b]'
                             }`}
                         >
-                            {loading || processingCreditCheckPayment ? 'Submitting Application...' : 'Submit for Manual Review'}
+                            {loading || processingCreditCheckPayment ? 'Submitting Application...' : copy.manual_submit_label}
                         </button>
                     </>
-                )}
+                    );
+                })()}
 
                 {showCreditCheckFeeModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
