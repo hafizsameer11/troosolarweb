@@ -319,7 +319,13 @@ const BNPLFlow = () => {
     const [cartError, setCartError] = useState(null);
 
     const [formData, setFormData] = useState({
-        customerType: '',
+        customerType: (() => {
+            try {
+                return sessionStorage.getItem('bnpl_customer_type') || '';
+            } catch {
+                return '';
+            }
+        })(),
         productCategory: '', // 'full-kit', 'inverter-battery', 'battery-only', 'inverter-only', 'panels-only'
         optionType: '', // 'choose-system', 'build-system', 'audit'
         auditType: '', // 'home-office', 'commercial'
@@ -687,6 +693,42 @@ const BNPLFlow = () => {
     }, []);
 
     // --- Effects ---
+
+    const isSmeOrCommercialCustomer = (type) => {
+        const t = String(type || '').toLowerCase().trim();
+        return t === 'sme' || t === 'commercial' || t.includes('sme');
+    };
+
+    const getCreditCheckMethodCopy = (customerType, config = loanConfig) => {
+        const ccmAll = config?.credit_check_method || {};
+        const isSmeCustomer = isSmeOrCommercialCustomer(customerType);
+        const segment = isSmeCustomer ? (ccmAll.sme || {}) : (ccmAll.residential || {});
+        const defaults = isSmeCustomer
+            ? {
+                auto_title: 'Connect your bank (Recommended)',
+                auto_description: 'Link your business account with Mono, pay the verification fee, then we run the credit check automatically.',
+                manual_title: 'Manual review',
+                manual_description: 'Pay the verification fee first, then upload your bank statement and selfie.',
+            }
+            : {
+                auto_title: 'Connect your bank (Recommended)',
+                auto_description: 'Link your account with Mono, pay the verification fee, then we run the credit check automatically.',
+                manual_title: 'Manual review',
+                manual_description: 'Pay the verification fee first, then upload your bank statement and selfie.',
+            };
+        return {
+            isSmeCustomer,
+            intro: ccmAll.intro || 'Choose how you would like to complete your credit check.',
+            continue_label: ccmAll.continue_label || 'Continue',
+            unavailable_label: ccmAll.unavailable_label || 'Currently unavailable',
+            auto_enabled: segment.auto_enabled !== false,
+            manual_enabled: segment.manual_enabled !== false,
+            auto_title: segment.auto_title || defaults.auto_title,
+            auto_description: segment.auto_description || defaults.auto_description,
+            manual_title: segment.manual_title || defaults.manual_title,
+            manual_description: segment.manual_description || defaults.manual_description,
+        };
+    };
     
     // Default credit check method when step 10 is reached
     React.useEffect(() => {
@@ -697,23 +739,38 @@ const BNPLFlow = () => {
             }
             return;
         }
-        const ccmAll = loanConfig?.credit_check_method || {};
-        const isSmeCustomer = ['sme', 'commercial'].includes(String(formData.customerType || '').toLowerCase());
-        const segment = isSmeCustomer ? (ccmAll.sme || {}) : (ccmAll.residential || {});
-        const autoEnabled = segment.auto_enabled !== false;
-        const manualEnabled = segment.manual_enabled !== false;
+        const copy = getCreditCheckMethodCopy(formData.customerType);
         const current = formData.creditCheckMethod;
         const currentOk =
-            (current === 'auto' && autoEnabled) ||
-            (current === 'manual' && manualEnabled);
+            (current === 'auto' && copy.auto_enabled) ||
+            (current === 'manual' && copy.manual_enabled);
         if (currentOk) return;
         let next = '';
-        if (autoEnabled) next = 'auto';
-        else if (manualEnabled) next = 'manual';
+        if (copy.auto_enabled) next = 'auto';
+        else if (copy.manual_enabled) next = 'manual';
         if (next && next !== current) {
             setFormData((prev) => ({ ...prev, creditCheckMethod: next }));
         }
     }, [step, formData.financingPath, formData.customerType, formData.creditCheckMethod, loanConfig]);
+
+    // Fresh admin copy when landing on credit check (Troosolar method cards / partner fee text)
+    React.useEffect(() => {
+        if (step !== 10) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await axios.get(API.CONFIG_LOAN_CONFIGURATION, {
+                    headers: { Accept: 'application/json' },
+                });
+                if (!cancelled && res.data?.status === 'success' && res.data?.data) {
+                    setLoanConfig(res.data.data);
+                }
+            } catch {
+                /* keep existing loanConfig */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [step]);
 
     React.useEffect(() => {
         if (step !== 10) return;
@@ -807,7 +864,9 @@ const BNPLFlow = () => {
                     ...prev,
                     optionType: prev.optionType || 'choose-system',
                     productCategory: resolvedCategory ?? prev.productCategory ?? 'full-kit',
-                    customerType: prev.customerType || 'residential',
+                    customerType: prev.customerType || (() => {
+                        try { return sessionStorage.getItem('bnpl_customer_type') || 'residential'; } catch { return 'residential'; }
+                    })(),
                 }));
             }
         }
@@ -850,7 +909,9 @@ const BNPLFlow = () => {
                     selectedProductPrice: price,
                     optionType: 'choose-system', // Assume choose-system when coming from bundle
                     productCategory: 'full-kit', // Default category
-                    customerType: prev.customerType || 'residential' // Set default customer type if not already set
+                    customerType: prev.customerType || (() => {
+                        try { return sessionStorage.getItem('bnpl_customer_type') || 'residential'; } catch { return 'residential'; }
+                    })(), // Set default customer type if not already set
                 }));
                 
                 // Skip to the target step (Order Summary)
@@ -1398,6 +1459,9 @@ const BNPLFlow = () => {
     // --- Handlers ---
 
     const handleCustomerTypeSelect = (type) => {
+        try {
+            sessionStorage.setItem('bnpl_customer_type', String(type || ''));
+        } catch { /* ignore */ }
         if (type === 'commercial') {
             setFormData((prev) => ({
                 ...prev,
@@ -5641,18 +5705,18 @@ const BNPLFlow = () => {
                 )}
 
                 {phase === 'choose_method' && !isPartnerPath && (() => {
-                    const ccmAll = loanConfig?.credit_check_method || {};
-                    const isSmeCustomer = ['sme', 'commercial'].includes(String(formData.customerType || '').toLowerCase());
-                    const segment = isSmeCustomer ? (ccmAll.sme || {}) : (ccmAll.residential || {});
-                    const intro = ccmAll.intro || 'Choose how you would like to complete your credit check.';
-                    const continueLabel = ccmAll.continue_label || 'Continue';
-                    const unavailableLabel = ccmAll.unavailable_label || 'Currently unavailable';
-                    const autoEnabled = segment.auto_enabled !== false;
-                    const manualEnabled = segment.manual_enabled !== false;
-                    const autoTitle = segment.auto_title || 'Connect your bank (Recommended)';
-                    const autoDescription = segment.auto_description || 'Link your account with Mono, pay the verification fee, then we run the credit check automatically.';
-                    const manualTitle = segment.manual_title || 'Manual review';
-                    const manualDescription = segment.manual_description || 'Pay the verification fee first, then upload your bank statement and selfie.';
+                    const copy = getCreditCheckMethodCopy(formData.customerType);
+                    const {
+                        intro,
+                        continue_label: continueLabel,
+                        unavailable_label: unavailableLabel,
+                        auto_enabled: autoEnabled,
+                        manual_enabled: manualEnabled,
+                        auto_title: autoTitle,
+                        auto_description: autoDescription,
+                        manual_title: manualTitle,
+                        manual_description: manualDescription,
+                    } = copy;
                     const selectedAuto = isAutoMethod && autoEnabled;
                     const selectedManual = isManualMethod && manualEnabled;
                     const canContinue = (formData.creditCheckMethod === 'auto' && autoEnabled)
