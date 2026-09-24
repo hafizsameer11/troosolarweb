@@ -1694,12 +1694,23 @@ const BNPLLoanDetails = () => {
                         snapFinancingPath === 'partner'
                         || String(order?.credit_check_method || loanApp?.credit_check_method || '').toLowerCase() === 'partner';
 
+                    const partnerTotalAmount = pickNum(
+                        ld?.totalAmount,
+                        ld?.grandTotal,
+                        ld?.invoiceGrandTotal,
+                        loanCalc?.total_amount
+                    );
                     const partnerInitialDeposit = pickNum(
                         ld?.baseDepositAmount,
                         ld?.depositAmount,
                         ld?.down_payment,
                         loanCalc?.down_payment
                     );
+                    const partnerLoanAmount = pickNum(
+                        ld?.totalLoanAmount,
+                        ld?.principal,
+                        loanCalc?.principal_amount
+                    ) || Math.max(partnerTotalAmount - partnerInitialDeposit, 0);
                     const partnerDepositLabelPct =
                         depositPercentRaw > 0
                             ? `${depositPercentRaw}%`
@@ -1707,12 +1718,15 @@ const BNPLLoanDetails = () => {
 
                     const summaryRows = isPartnerFinancing
                         ? [
+                            { label: 'Total Amount', value: partnerTotalAmount },
                             {
                                 label: partnerDepositLabelPct !== '—'
                                     ? `Initial Deposit (${partnerDepositLabelPct})`
                                     : 'Initial Deposit',
                                 value: partnerInitialDeposit,
+                                accent: 'red',
                             },
+                            { label: 'Total Loan Amount', value: partnerLoanAmount },
                         ]
                         : [
                             {
@@ -1736,8 +1750,14 @@ const BNPLLoanDetails = () => {
                             {summaryRows.map((row, index) => (
                                 <div key={row.label} className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                                     <p className="text-sm font-medium text-gray-800">{row.label}</p>
-                                    <p className={`text-xl font-bold ${!isPartnerFinancing && index === 4 ? 'text-[#273e8e]' : 'text-gray-800'}`}>
-                                        {formatCurrency(row.value)}
+                                    <p className={`text-xl font-bold ${
+                                        row.accent === 'red'
+                                            ? 'text-red-600'
+                                            : !isPartnerFinancing && index === 4
+                                                ? 'text-[#273e8e]'
+                                                : 'text-gray-800'
+                                    }`}>
+                                        {row.accent === 'red' ? '−' : ''}{formatCurrency(row.value)}
                                     </p>
                                 </div>
                             ))}
