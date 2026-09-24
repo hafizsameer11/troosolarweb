@@ -6391,12 +6391,6 @@ const BNPLFlow = () => {
                             || 'We have received your application for partner financing. We will get back to you within 2 - 5 working days.')
                         : 'We are processing your details. This usually takes 24-72 hours.'}
                 </p>
-                {formData.financingPath === 'partner' && (
-                    <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4 whitespace-pre-line">
-                        {loanConfig?.credit_check_method?.partner?.routed_note
-                            || "Your application was routed to a financing partner. Troosolar's internal guarantor flow does not continue for this path."}
-                    </p>
-                )}
                 {formData.financingPath !== 'partner' && formData.creditCheckMethod === 'auto' && (
                     <p className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4">
                         Your Mono bank credit check is running in the background. Our team will see the results when ready — you do not need to wait on this screen.
