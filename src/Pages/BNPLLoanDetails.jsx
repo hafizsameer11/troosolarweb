@@ -381,6 +381,7 @@ const BNPLLoanDetails = () => {
                     counter_offer_min_deposit: appData.counter_offer_min_deposit,
                     counter_offer_min_tenor: appData.counter_offer_min_tenor,
                     counter_offer_details: appData.counter_offer_details,
+                    partner_offer: appData.partner_offer,
                     admin_notes: appData.admin_notes
                 });
             } else {
@@ -525,6 +526,8 @@ const BNPLLoanDetails = () => {
                 return <Clock size={24} className="text-blue-600" />;
             case 'counter_offer':
                 return <AlertCircle size={24} className="text-yellow-600" />;
+            case 'partner_offer':
+                return <AlertCircle size={24} className="text-indigo-600" />;
             default:
                 return <AlertCircle size={24} className="text-yellow-600" />;
         }
@@ -543,6 +546,7 @@ const BNPLLoanDetails = () => {
             processing: 'bg-yellow-100 text-yellow-800 border-yellow-300',
             overdue: 'bg-red-100 text-red-800 border-red-300',
             counter_offer: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            partner_offer: 'bg-indigo-100 text-indigo-800 border-indigo-300',
             counter_offer_accepted: 'bg-green-100 text-green-800 border-green-300'
         };
         return badges[statusLower] || badges.pending;
@@ -1182,6 +1186,85 @@ const BNPLLoanDetails = () => {
                                 Re-apply with Different Terms (No extra credit check fee)
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {/* Partner Offer Section */}
+                {isApplication && displayStatus?.toLowerCase() === 'partner_offer' && (
+                    <div className="bg-indigo-50 border-2 border-indigo-300 rounded-xl p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <AlertCircle size={32} className="text-indigo-600" />
+                            <h3 className="text-2xl font-bold text-indigo-900">Partner Financing Offer</h3>
+                        </div>
+                        <p className="text-gray-700 mb-6">
+                            A financing partner has provided an offer for your application. Review the terms below
+                            {(order.partner_offer?.documents || []).length > 0
+                                ? ' and check your email for supporting documents.'
+                                : '.'}
+                        </p>
+                        <div className="bg-white border border-indigo-200 p-6 rounded-lg mb-4">
+                            <h4 className="font-bold text-gray-800 mb-4">Partner Offer Terms:</h4>
+                            {order.admin_notes && (
+                                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <p className="text-sm text-gray-700">
+                                        <strong>Admin Note:</strong> {order.admin_notes}
+                                    </p>
+                                </div>
+                            )}
+                            <div className="space-y-3">
+                                {order.partner_offer?.interest_rate != null && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600">Interest rate:</span>
+                                        <span className="font-bold text-lg text-gray-800">
+                                            {order.partner_offer.interest_rate}%
+                                        </span>
+                                    </div>
+                                )}
+                                {order.partner_offer?.initial_deposit != null && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600">Initial deposit:</span>
+                                        <span className="font-bold text-lg text-gray-800">
+                                            {formatCurrency(order.partner_offer.initial_deposit)}
+                                        </span>
+                                    </div>
+                                )}
+                                {order.partner_offer?.admin_fees != null && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600">Admin fees:</span>
+                                        <span className="font-bold text-lg text-gray-800">
+                                            {formatCurrency(order.partner_offer.admin_fees)}
+                                        </span>
+                                    </div>
+                                )}
+                                {order.partner_offer?.loan_amount != null && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600">Loan amount:</span>
+                                        <span className="font-bold text-lg text-gray-800">
+                                            {formatCurrency(order.partner_offer.loan_amount)}
+                                        </span>
+                                    </div>
+                                )}
+                                {order.partner_offer?.repayment_amount != null && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600">Repayment amount:</span>
+                                        <span className="font-bold text-lg text-[#273e8e]">
+                                            {formatCurrency(order.partner_offer.repayment_amount)}
+                                        </span>
+                                    </div>
+                                )}
+                                {order.partner_offer?.tenor != null && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600">Tenor:</span>
+                                        <span className="font-bold text-lg text-gray-800">
+                                            {order.partner_offer.tenor} months
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                            Our team will follow up with next steps. You can also contact support if you have questions about this offer.
+                        </p>
                     </div>
                 )}
 
