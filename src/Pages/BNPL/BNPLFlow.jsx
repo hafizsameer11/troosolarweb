@@ -5545,23 +5545,37 @@ const BNPLFlow = () => {
         const creditCheckFee = getCreditCheckFee();
         const canDebitLinkedBank = formData.creditCheckMethod === 'auto' && userMonoAccount?.linked;
         const linkedBankLabel = userMonoAccount?.bank_label || 'your linked bank account';
+        const isPartnerPath = formData.financingPath === 'partner';
+        const partnerCopy = loanConfig?.credit_check_method?.partner || {};
+        const feeNote = isPartnerPath
+            ? (partnerCopy.fee_note || 'Pay the verification fee before we run your credit check. Prefer card or bank transfer? Use the payment option below.')
+            : null;
+        const termsLabel = isPartnerPath
+            ? (partnerCopy.terms_label || 'I accept the terms and conditions for the credit check fee payment.')
+            : 'I accept the terms and conditions for the credit check fee payment.';
 
         return (
             <div className="space-y-6">
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
-                    <p className="text-sm text-blue-800 font-medium">
-                        Pay the verification fee before we run your credit check
-                        {formData.creditCheckMethod === 'manual' ? ' and review your documents' : ''}.
-                    </p>
-                    {canDebitLinkedBank && (
-                        <p className="text-sm text-blue-700">
-                            Recommended: debit ₦{creditCheckFee.toLocaleString()} directly from {linkedBankLabel}.
-                            No card needed — you authorize the one-time debit in Mono.
-                        </p>
+                    {isPartnerPath ? (
+                        <p className="text-sm text-blue-800 font-medium whitespace-pre-line">{feeNote}</p>
+                    ) : (
+                        <>
+                            <p className="text-sm text-blue-800 font-medium">
+                                Pay the verification fee before we run your credit check
+                                {formData.creditCheckMethod === 'manual' ? ' and review your documents' : ''}.
+                            </p>
+                            {canDebitLinkedBank && (
+                                <p className="text-sm text-blue-700">
+                                    Recommended: debit ₦{creditCheckFee.toLocaleString()} directly from {linkedBankLabel}.
+                                    No card needed — you authorize the one-time debit in Mono.
+                                </p>
+                            )}
+                            <p className="text-xs text-blue-600">
+                                Prefer card or bank transfer? Use the payment option below.
+                            </p>
+                        </>
                     )}
-                    <p className="text-xs text-blue-600">
-                        Prefer card or bank transfer? Use the payment option below.
-                    </p>
                 </div>
 
                 {(() => {
@@ -5596,9 +5610,9 @@ const BNPLFlow = () => {
                     </button>
                     <label
                         onClick={() => setAcceptedTerms(!acceptedTerms)}
-                        className="text-sm text-gray-700 cursor-pointer flex-1"
+                        className="text-sm text-gray-700 cursor-pointer flex-1 whitespace-pre-line"
                     >
-                        I accept the terms and conditions for the credit check fee payment.
+                        {termsLabel}
                     </label>
                 </div>
 
@@ -5621,7 +5635,7 @@ const BNPLFlow = () => {
                         type="button"
                         onClick={async () => {
                             if (!acceptedTerms) {
-                                alert("Please accept the terms and conditions to proceed.");
+                                alert('Please accept the terms and conditions to proceed.');
                                 return;
                             }
                             await handleCreditCheckFeeFlutterwave();
