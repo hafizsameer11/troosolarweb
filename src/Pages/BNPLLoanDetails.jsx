@@ -366,6 +366,7 @@ const BNPLLoanDetails = () => {
                     id: appData.id,
                     status: appData.status,
                     created_at: appData.created_at,
+                    financing_path: appData.financing_path,
                     loan_application: appData,
                     application: appData,
                     repayment_schedule: repaymentSchedule,
@@ -1680,27 +1681,62 @@ const BNPLLoanDetails = () => {
                     }
                     const depositLabelPct =
                         depositPercentForLabel > 0 ? `${depositPercentForLabel}%` : '—';
-                    const summaryRows = [
-                        {
-                            label: `Initial Deposit (${depositLabelPct}) + Total Administrative Fees`,
-                            value: initialDepositWithFees,
-                        },
-                        { label: 'Total Loan Amount', value: totalLoanAmount },
-                        { label: `Total Interest Amount (${interestRatePercent}% × ${tenor} mo)`, value: totalInterestAmount },
-                        { label: 'Total Repayment Amount', value: totalRepaymentAmount },
-                        { label: 'Monthly Repayment Amount', value: monthlyRepaymentAmount },
-                    ];
+
+                    // Partner path uses the first/simple calculator (deposit + tenor only) — not Troosolar full breakdown.
+                    const snapFinancingPath = String(
+                        order?.financing_path
+                            || loanApp?.financing_path
+                            || order?.loan_plan_snapshot?.financing?.path
+                            || loanApp?.loan_plan_snapshot?.financing?.path
+                            || ''
+                    ).toLowerCase();
+                    const isPartnerFinancing =
+                        snapFinancingPath === 'partner'
+                        || String(order?.credit_check_method || loanApp?.credit_check_method || '').toLowerCase() === 'partner';
+
+                    const partnerInitialDeposit = pickNum(
+                        ld?.baseDepositAmount,
+                        ld?.depositAmount,
+                        ld?.down_payment,
+                        loanCalc?.down_payment
+                    );
+                    const partnerDepositLabelPct =
+                        depositPercentRaw > 0
+                            ? `${depositPercentRaw}%`
+                            : (depositPercentForLabel > 0 ? `${depositPercentForLabel}%` : '—');
+
+                    const summaryRows = isPartnerFinancing
+                        ? [
+                            {
+                                label: partnerDepositLabelPct !== '—'
+                                    ? `Initial Deposit (${partnerDepositLabelPct})`
+                                    : 'Initial Deposit',
+                                value: partnerInitialDeposit,
+                            },
+                        ]
+                        : [
+                            {
+                                label: `Initial Deposit (${depositLabelPct}) + Total Administrative Fees`,
+                                value: initialDepositWithFees,
+                            },
+                            { label: 'Total Loan Amount', value: totalLoanAmount },
+                            { label: `Total Interest Amount (${interestRatePercent}% × ${tenor} mo)`, value: totalInterestAmount },
+                            { label: 'Total Repayment Amount', value: totalRepaymentAmount },
+                            { label: 'Monthly Repayment Amount', value: monthlyRepaymentAmount },
+                        ];
                     return (
                     <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl shadow-sm border border-green-200 p-6">
                         <div className="flex items-center gap-3 mb-4">
                             <span className="text-[#273e8e] text-2xl font-bold" aria-hidden="true">₦</span>
-                            <h3 className="text-xl font-semibold text-gray-800">Loan Summary</h3>
+                            <h3 className="text-xl font-semibold text-gray-800">
+                                {isPartnerFinancing ? 'Financing Summary' : 'Loan Summary'}
+                            </h3>
                         </div>
                         <div className="space-y-3">
                             {summaryRows.map((row, index) => (
                                 <div key={row.label} className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                                     <p className="text-sm font-medium text-gray-800">{row.label}</p>
-                                    <p className={`text-xl font-bold ${index === 4 ? 'text-[#273e8e]' : 'text-gray-800'}`}>
+                                    <p className={`text-xl font-bold ${!isPartnerFinancing && index === 4 ? 'text-[#273e8e]' : 'text-gray-800'}`}>
                                         {formatCurrency(row.value)}
                                     </p>
                                 </div>
@@ -1714,8 +1750,9 @@ const BNPLLoanDetails = () => {
                                 </div>
                             </div>
                         </div>
-                        {/* Pay Down Payment – show when approved, down payment not yet paid, and no order yet */}
-                        {isApplication &&
+                        {/* Pay Down Payment – Troosolar path only; partner financers settle outside this breakdown */}
+                        {!isPartnerFinancing &&
+                            isApplication &&
                             (displayStatus?.toLowerCase() === 'approved' || displayStatus?.toLowerCase() === 'counter_offer_accepted') &&
                             !order.order_id &&
                             !order.down_payment_completed &&
