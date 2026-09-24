@@ -6173,7 +6173,7 @@ const BNPLFlow = () => {
             // Files — required for partner path (collected on Final Application) and Troosolar manual/failed Mono
             if (financingPath === 'partner') {
                 if (!formData.bankStatement || !formData.livePhoto) {
-                    alert("Bank statement and live selfie are required for Partner Financing. Please upload them on the Final Application form.");
+                    alert("Bank statement and a live selfie or passport photograph are required for Partner Financing. Please add them on the Final Application form.");
                     setLoading(false);
                     return;
                 }
