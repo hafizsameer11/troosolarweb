@@ -75,7 +75,7 @@ const BnplFinalApplicationForm = ({
       });
       setCameraStream(stream);
     } catch {
-      alert('Unable to access camera. You can upload a selfie image instead.');
+      alert('Unable to access camera. You can upload a passport photograph instead.');
     }
   };
 
@@ -172,11 +172,7 @@ const BnplFinalApplicationForm = ({
         return false;
       }
       if (!formData.livePhoto) {
-        alert(
-          isSme
-            ? 'Please upload your passport photograph for partner financing.'
-            : 'Please upload or capture a live selfie for partner financing.'
-        );
+        alert('Please take a live selfie or upload a passport photograph for partner financing.');
         return false;
       }
     }
@@ -501,8 +497,8 @@ const BnplFinalApplicationForm = ({
             <h3 className="text-lg font-bold mb-2 text-gray-800 border-b pb-2">Partner Financing Documents</h3>
             <p className="text-sm text-gray-600 mb-4">
               {isSme
-                ? 'Required for Partner Financing only. Upload your business bank account statement and a passport photograph.'
-                : 'Required for Partner Financing only. Upload your bank statement and take or upload a live selfie.'}
+                ? 'Required for Partner Financing only. Upload your business bank account statement, then take a live selfie or upload a passport photograph.'
+                : 'Required for Partner Financing only. Upload your bank statement, then take a live selfie or upload a passport photograph.'}
             </p>
             <div className="space-y-5">
               <div>
@@ -535,136 +531,89 @@ const BnplFinalApplicationForm = ({
               </div>
 
               <div>
-                {isSme ? (
-                  <>
-                    <label className={labelClass}>Passport Photograph *</label>
-                    {formData.livePhoto ? (
-                      <div className="relative rounded-lg overflow-hidden border border-green-300 bg-green-50 mb-2">
-                        <img
-                          src={formData.livePhotoPreview || URL.createObjectURL(formData.livePhoto)}
-                          alt="Passport photograph preview"
-                          className="w-full h-64 object-cover"
-                        />
-                        <div className="absolute top-2 right-2">
-                          <button
-                            type="button"
-                            onClick={() => set({ livePhoto: null, livePhotoPreview: null })}
-                            className="bg-red-500 text-white rounded-full p-1.5 shadow hover:bg-red-600"
-                            title="Remove Photo"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                        <p className="text-sm text-green-700 font-medium p-2 text-center">✓ Passport photograph uploaded</p>
-                      </div>
-                    ) : (
-                      <label className="flex flex-col items-center justify-center gap-2 w-full p-6 border-2 border-dashed border-[#273e8e] rounded-lg bg-[#273e8e]/5 hover:bg-[#273e8e]/10 transition-colors cursor-pointer">
-                        <span className="text-[#273e8e] font-semibold">Upload Passport Photograph</span>
-                        <span className="text-xs text-gray-500">JPG or PNG (Max 5MB)</span>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/jpg,image/png"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert('Passport photograph file size must be less than 5MB');
-                              e.target.value = '';
-                              return;
-                            }
-                            const previewUrl = URL.createObjectURL(file);
-                            set({ livePhoto: file, livePhotoPreview: previewUrl });
-                          }}
-                        />
-                      </label>
-                    )}
-                    <p className="text-xs text-gray-500 mt-1">Upload a clear passport-size photograph of the business owner / director.</p>
-                  </>
+                <label className={labelClass}>Live Photo / Passport Photograph *</label>
+                {cameraStream ? (
+                  <div className="relative rounded-lg overflow-hidden border-2 border-[#273e8e] mb-2">
+                    <video
+                      ref={cameraVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-64 object-cover bg-black"
+                    />
+                    <canvas ref={cameraCanvasRef} className="hidden" />
+                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={captureLivePhoto}
+                        className="bg-white text-[#273e8e] rounded-full p-3 shadow-lg hover:bg-gray-100 transition-colors border-2 border-[#273e8e]"
+                        title="Capture Photo"
+                      >
+                        <Camera size={28} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="bg-red-500 text-white rounded-full p-3 shadow-lg hover:bg-red-600 transition-colors"
+                        title="Close Camera"
+                      >
+                        <X size={28} />
+                      </button>
+                    </div>
+                  </div>
+                ) : formData.livePhoto ? (
+                  <div className="relative rounded-lg overflow-hidden border border-green-300 bg-green-50 mb-2">
+                    <img
+                      src={formData.livePhotoPreview || URL.createObjectURL(formData.livePhoto)}
+                      alt="Photo preview"
+                      className="w-full h-64 object-cover"
+                    />
+                    <div className="absolute top-2 right-2">
+                      <button
+                        type="button"
+                        onClick={() => set({ livePhoto: null, livePhotoPreview: null })}
+                        className="bg-red-500 text-white rounded-full p-1.5 shadow hover:bg-red-600"
+                        title="Remove Photo"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <p className="text-sm text-green-700 font-medium p-2 text-center">✓ Photo added</p>
+                  </div>
                 ) : (
-                  <>
-                    <label className={labelClass}>Live Photo / Selfie *</label>
-                    {cameraStream ? (
-                      <div className="relative rounded-lg overflow-hidden border-2 border-[#273e8e] mb-2">
-                        <video
-                          ref={cameraVideoRef}
-                          autoPlay
-                          playsInline
-                          muted
-                          className="w-full h-64 object-cover bg-black"
-                        />
-                        <canvas ref={cameraCanvasRef} className="hidden" />
-                        <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-3">
-                          <button
-                            type="button"
-                            onClick={captureLivePhoto}
-                            className="bg-white text-[#273e8e] rounded-full p-3 shadow-lg hover:bg-gray-100 transition-colors border-2 border-[#273e8e]"
-                            title="Capture Photo"
-                          >
-                            <Camera size={28} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={stopCamera}
-                            className="bg-red-500 text-white rounded-full p-3 shadow-lg hover:bg-red-600 transition-colors"
-                            title="Close Camera"
-                          >
-                            <X size={28} />
-                          </button>
-                        </div>
-                      </div>
-                    ) : formData.livePhoto ? (
-                      <div className="relative rounded-lg overflow-hidden border border-green-300 bg-green-50 mb-2">
-                        <img
-                          src={formData.livePhotoPreview || URL.createObjectURL(formData.livePhoto)}
-                          alt="Live Photo Preview"
-                          className="w-full h-64 object-cover"
-                        />
-                        <div className="absolute top-2 right-2">
-                          <button
-                            type="button"
-                            onClick={() => set({ livePhoto: null, livePhotoPreview: null })}
-                            className="bg-red-500 text-white rounded-full p-1.5 shadow hover:bg-red-600"
-                            title="Remove Photo"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                        <p className="text-sm text-green-700 font-medium p-2 text-center">✓ Live photo captured</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-3 mb-2">
-                        <button
-                          type="button"
-                          onClick={startCamera}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#273e8e] text-white text-sm font-medium hover:bg-[#1a2b6b]"
-                        >
-                          <Camera size={16} /> Take live selfie
-                        </button>
-                        <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50">
-                          Upload selfie image
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/jpg,image/png"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              if (file.size > 5 * 1024 * 1024) {
-                                alert('Selfie file size must be less than 5MB');
-                                e.target.value = '';
-                                return;
-                              }
-                              const previewUrl = URL.createObjectURL(file);
-                              set({ livePhoto: file, livePhotoPreview: previewUrl });
-                            }}
-                          />
-                        </label>
-                      </div>
-                    )}
-                    <p className="text-xs text-gray-500">JPG or PNG (Max 5MB). Prefer a clear live selfie.</p>
-                  </>
+                  <div className="flex flex-wrap gap-3 mb-2">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#273e8e] text-white text-sm font-medium hover:bg-[#1a2b6b]"
+                    >
+                      <Camera size={16} /> Take live selfie
+                    </button>
+                    <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50">
+                      Upload passport photograph
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 5 * 1024 * 1024) {
+                            alert('Passport photograph file size must be less than 5MB');
+                            e.target.value = '';
+                            return;
+                          }
+                          const previewUrl = URL.createObjectURL(file);
+                          set({ livePhoto: file, livePhotoPreview: previewUrl });
+                        }}
+                      />
+                    </label>
+                  </div>
                 )}
+                <p className="text-xs text-gray-500">
+                  JPG or PNG (Max 5MB). Take a clear live selfie, or upload a passport photograph
+                  {isSme ? ' of the business owner / director.' : '.'}
+                </p>
               </div>
             </div>
           </section>
