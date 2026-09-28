@@ -282,7 +282,6 @@ const BNPLFlow = () => {
     const [creditCheckPhase, setCreditCheckPhase] = useState('choose_method');
     const [creditCheckFeePaid, setCreditCheckFeePaid] = useState(false);
     const [monoFeePaymentReference, setMonoFeePaymentReference] = useState(null);
-    const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [monoConnectInstance, setMonoConnectInstance] = useState(null);
     const [monoFailed, setMonoFailed] = useState(false); // Track if Mono has failed
     const [monoCreditSessionId, setMonoCreditSessionId] = useState(null);
@@ -803,7 +802,6 @@ const BNPLFlow = () => {
             setCreditCheckFeePaid(!!skipCreditCheckFee);
             setMonoFeePaymentReference(null);
             setShowCreditCheckFeeModal(false);
-            setAcceptedTerms(false);
             setCreditCheckPhase(skipCreditCheckFee ? 'partner_ready' : 'pay_fee');
             return;
         }
@@ -811,7 +809,6 @@ const BNPLFlow = () => {
         setCreditCheckFeePaid(false);
         setMonoFeePaymentReference(null);
         setShowCreditCheckFeeModal(false);
-        setAcceptedTerms(false);
     }, [step]);
 
     React.useEffect(() => {
@@ -5364,10 +5361,6 @@ const BNPLFlow = () => {
     };
 
     const handleCreditCheckFeeMonoPay = async () => {
-        if (!acceptedTerms) {
-            alert("Please accept the terms and conditions to proceed.");
-            return;
-        }
         if (!userMonoAccount?.linked) {
             alert("Please link your bank account with Mono first.");
             return;
@@ -5550,9 +5543,6 @@ const BNPLFlow = () => {
         const feeNote = isPartnerPath
             ? (partnerCopy.fee_note || 'Pay the verification fee before we run your credit check. Prefer card or bank transfer? Use the payment option below.')
             : null;
-        const termsLabel = isPartnerPath
-            ? (partnerCopy.terms_label || 'I accept the terms and conditions for the credit check fee payment.')
-            : 'I accept the terms and conditions for the credit check fee payment.';
 
         return (
             <div className="space-y-6">
@@ -5596,34 +5586,14 @@ const BNPLFlow = () => {
                     </p>
                 </div>
 
-                <div className="flex items-start gap-3">
-                    <button
-                        type="button"
-                        onClick={() => setAcceptedTerms(!acceptedTerms)}
-                        className={`mt-1 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                            acceptedTerms
-                                ? 'bg-[#273e8e] border-[#273e8e]'
-                                : 'border-gray-300 hover:border-[#273e8e]'
-                        }`}
-                    >
-                        {acceptedTerms && <CheckCircle size={16} className="text-white" />}
-                    </button>
-                    <label
-                        onClick={() => setAcceptedTerms(!acceptedTerms)}
-                        className="text-sm text-gray-700 cursor-pointer flex-1 whitespace-pre-line"
-                    >
-                        {termsLabel}
-                    </label>
-                </div>
-
                 <div className="flex flex-col gap-3">
                     {canDebitLinkedBank && (
                         <button
                             type="button"
                             onClick={handleCreditCheckFeeMonoPay}
-                            disabled={processingCreditCheckPayment || !acceptedTerms}
+                            disabled={processingCreditCheckPayment}
                             className={`w-full bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors ${
-                                processingCreditCheckPayment || !acceptedTerms ? 'opacity-50 cursor-not-allowed' : ''
+                                processingCreditCheckPayment ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
                         >
                             {processingCreditCheckPayment
@@ -5634,15 +5604,11 @@ const BNPLFlow = () => {
                     <button
                         type="button"
                         onClick={async () => {
-                            if (!acceptedTerms) {
-                                alert('Please accept the terms and conditions to proceed.');
-                                return;
-                            }
                             await handleCreditCheckFeeFlutterwave();
                         }}
-                        disabled={processingCreditCheckPayment || !acceptedTerms}
+                        disabled={processingCreditCheckPayment}
                         className={`w-full border-2 border-[#273e8e] text-[#273e8e] py-4 rounded-xl font-bold hover:bg-blue-50 transition-colors ${
-                            processingCreditCheckPayment || !acceptedTerms ? 'opacity-50 cursor-not-allowed' : ''
+                            processingCreditCheckPayment ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                     >
                         {processingCreditCheckPayment
@@ -5967,7 +5933,6 @@ const BNPLFlow = () => {
                 {showCreditCheckFeeModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => {
                     setShowCreditCheckFeeModal(false);
-                    setAcceptedTerms(false);
                 }}>
                     <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-6">
@@ -5975,7 +5940,6 @@ const BNPLFlow = () => {
                             <button
                                 onClick={() => {
                                     setShowCreditCheckFeeModal(false);
-                                    setAcceptedTerms(false);
                                 }}
                                 className="text-gray-400 hover:text-gray-600 transition-colors"
                             >
