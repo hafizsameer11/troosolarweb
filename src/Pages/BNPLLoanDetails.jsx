@@ -580,13 +580,27 @@ const BNPLLoanDetails = () => {
         }
     };
 
-    const handlePayDownPayment = async () => {
+    const handlePayDownPayment = async (overrideAmount = null) => {
         if (!id || !id.startsWith('app-')) return;
         const applicationId = id.replace('app-', '');
         const order = orderData;
-        if (!order?.loan_calculation?.down_payment) return;
-        const downPaymentAmount = parseAmount(order.loan_calculation.down_payment);
-        if (downPaymentAmount <= 0) return;
+        const partnerOffer = order?.partner_offer;
+        const isPartnerOffer = String(order?.status || '').toLowerCase() === 'partner_offer';
+
+        let downPaymentAmount = 0;
+        if (overrideAmount != null && Number.isFinite(Number(overrideAmount)) && Number(overrideAmount) > 0) {
+            downPaymentAmount = Number(overrideAmount);
+        } else if (isPartnerOffer && partnerOffer) {
+            const deposit = parseAmount(partnerOffer.initial_deposit ?? 0);
+            const fees = parseAmount(partnerOffer.admin_fees ?? 0);
+            downPaymentAmount = deposit + fees;
+        } else if (order?.loan_calculation?.down_payment) {
+            downPaymentAmount = parseAmount(order.loan_calculation.down_payment);
+        }
+        if (downPaymentAmount <= 0) {
+            alert('Down payment amount is not available for this application.');
+            return;
+        }
 
         setProcessingDownPayment(true);
         try {
@@ -654,7 +668,7 @@ const BNPLLoanDetails = () => {
                 },
                 onclose: () => setProcessingDownPayment(false),
                 customizations: {
-                    title: 'BNPL Down Payment',
+                    title: isPartnerOffer ? 'Partner Offer Down Payment' : 'BNPL Down Payment',
                     description: `Down payment for Application #${applicationId}`,
                     logo: 'https://yourdomain.com/logo.png',
                 },
@@ -1189,84 +1203,113 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
-                {/* Partner Offer Section */}
-                {isApplication && displayStatus?.toLowerCase() === 'partner_offer' && (
-                    <div className="bg-indigo-50 border-2 border-indigo-300 rounded-xl p-6">
-                        <div className="flex items-center gap-3 mb-4">
-                            <AlertCircle size={32} className="text-indigo-600" />
-                            <h3 className="text-2xl font-bold text-indigo-900">Partner Financing Offer</h3>
+                {/* Partner Offer Section — Loan Summary style + Pay Down Payment */}
+                {isApplication && displayStatus?.toLowerCase() === 'partner_offer' && (() => {
+                    const po = order.partner_offer || {};
+                    const deposit = parseAmount(po.initial_deposit ?? 0);
+                    const fees = parseAmount(po.admin_fees ?? 0);
+                    const upfrontDue = deposit + fees;
+                    const loanAmount = parseAmount(po.loan_amount ?? 0);
+                    const repaymentAmount = parseAmount(po.repayment_amount ?? 0);
+                    const tenor = Number(po.tenor) || 0;
+                    const interestRate = po.interest_rate != null ? Number(po.interest_rate) : null;
+                    const totalInterest = repaymentAmount > 0 && loanAmount > 0
+                        ? Math.max(repaymentAmount - loanAmount, 0)
+                        : 0;
+                    const monthlyRepayment = tenor > 0 && repaymentAmount > 0
+                        ? repaymentAmount / tenor
+                        : 0;
+                    const interestLabel = interestRate != null && tenor > 0
+                        ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
+                        : 'Total Interest Amount';
+                    const summaryRows = [
+                        {
+                            label: fees > 0
+                                ? 'Initial Deposit + Total Administrative Fees'
+                                : 'Initial Deposit',
+                            value: upfrontDue,
+                        },
+                        { label: 'Total Loan Amount', value: loanAmount },
+                        { label: interestLabel, value: totalInterest },
+                        { label: 'Total Repayment Amount', value: repaymentAmount },
+                        { label: 'Monthly Repayment Amount', value: monthlyRepayment },
+                    ];
+                    const canPay =
+                        upfrontDue > 0 &&
+                        !order.order_id &&
+                        !order.down_payment_completed;
+
+                    return (
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl shadow-sm border border-green-200 p-6">
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className="text-[#273e8e] text-2xl font-bold" aria-hidden="true">₦</span>
+                            <h3 className="text-xl font-semibold text-gray-800">Partner Financing Offer</h3>
                         </div>
-                        <p className="text-gray-700 mb-6">
+                        <p className="text-sm text-gray-600 mb-4">
                             A financing partner has provided an offer for your application. Review the terms below
-                            {(order.partner_offer?.documents || []).length > 0
+                            {(po.documents || []).length > 0
                                 ? ' and check your email for supporting documents.'
                                 : '.'}
                         </p>
-                        <div className="bg-white border border-indigo-200 p-6 rounded-lg mb-4">
-                            <h4 className="font-bold text-gray-800 mb-4">Partner Offer Terms:</h4>
-                            {order.admin_notes && (
-                                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                    <p className="text-sm text-gray-700">
-                                        <strong>Admin Note:</strong> {order.admin_notes}
+                        {order.admin_notes && (
+                            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <p className="text-sm text-gray-700">
+                                    <strong>Admin Note:</strong> {order.admin_notes}
+                                </p>
+                            </div>
+                        )}
+                        <div className="space-y-3">
+                            {summaryRows.map((row, index) => (
+                                <div
+                                    key={row.label}
+                                    className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                                >
+                                    <p className="text-sm font-medium text-gray-800">{row.label}</p>
+                                    <p className={`text-xl font-bold ${
+                                        index === 4 ? 'text-[#273e8e]' : 'text-gray-800'
+                                    }`}>
+                                        {formatCurrency(row.value)}
                                     </p>
                                 </div>
-                            )}
-                            <div className="space-y-3">
-                                {order.partner_offer?.interest_rate != null && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-600">Interest rate:</span>
-                                        <span className="font-bold text-lg text-gray-800">
-                                            {order.partner_offer.interest_rate}%
-                                        </span>
-                                    </div>
-                                )}
-                                {order.partner_offer?.initial_deposit != null && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-600">Initial deposit:</span>
-                                        <span className="font-bold text-lg text-gray-800">
-                                            {formatCurrency(order.partner_offer.initial_deposit)}
-                                        </span>
-                                    </div>
-                                )}
-                                {order.partner_offer?.admin_fees != null && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-600">Admin fees:</span>
-                                        <span className="font-bold text-lg text-gray-800">
-                                            {formatCurrency(order.partner_offer.admin_fees)}
-                                        </span>
-                                    </div>
-                                )}
-                                {order.partner_offer?.loan_amount != null && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-600">Loan amount:</span>
-                                        <span className="font-bold text-lg text-gray-800">
-                                            {formatCurrency(order.partner_offer.loan_amount)}
-                                        </span>
-                                    </div>
-                                )}
-                                {order.partner_offer?.repayment_amount != null && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-600">Repayment amount:</span>
-                                        <span className="font-bold text-lg text-[#273e8e]">
-                                            {formatCurrency(order.partner_offer.repayment_amount)}
-                                        </span>
-                                    </div>
-                                )}
-                                {order.partner_offer?.tenor != null && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-600">Tenor:</span>
-                                        <span className="font-bold text-lg text-gray-800">
-                                            {order.partner_offer.tenor} months
-                                        </span>
-                                    </div>
-                                )}
+                            ))}
+                            <div className="border-t border-green-200 pt-3 mt-1">
+                                <div className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                    <p className="text-sm font-medium text-gray-800">Loan Tenor</p>
+                                    <p className="text-xl font-bold text-[#273e8e]">
+                                        {tenor > 0 ? `${tenor} ${tenor === 1 ? 'month' : 'months'}` : '—'}
+                                    </p>
+                                </div>
                             </div>
                         </div>
-                        <p className="text-sm text-gray-600">
-                            Our team will follow up with next steps. You can also contact support if you have questions about this offer.
-                        </p>
+                        {canPay ? (
+                            <div className="mt-4 bg-white rounded-lg p-4 border-2 border-[#273e8e]">
+                                <p className="text-sm text-gray-600 mb-2">
+                                    Pay your down payment to proceed with your order.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => handlePayDownPayment(upfrontDue)}
+                                    disabled={processingDownPayment}
+                                    className="w-full sm:w-auto px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {processingDownPayment ? (
+                                        <>Processing...</>
+                                    ) : (
+                                        <>
+                                            <CreditCard size={20} />
+                                            Pay Down Payment ({formatCurrency(upfrontDue)})
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-600 mt-4">
+                                Our team will follow up with next steps. You can also contact support if you have questions about this offer.
+                            </p>
+                        )}
                     </div>
-                )}
+                    );
+                })()}
 
                 {/* Down payment completed – show order link when application has an order */}
                 {isApplication && (order.order_id || order.down_payment_completed) && (
@@ -1614,7 +1657,8 @@ const BNPLLoanDetails = () => {
                 )}
 
                 {/* Loan Calculation / Repayment Breakdown — mirror BNPL flow summary */}
-                {(loanCalc || ld) && (() => {
+                {/* Hidden for partner_offer: dedicated Partner Financing Offer section above covers this */}
+                {(loanCalc || ld) && String(displayStatus || '').toLowerCase() !== 'partner_offer' && (() => {
                     const toNum = (v) => {
                         if (v === null || v === undefined || v === '') return null;
                         const n = parseAmount(v);
