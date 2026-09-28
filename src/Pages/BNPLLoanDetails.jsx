@@ -1210,14 +1210,24 @@ const BNPLLoanDetails = () => {
                     const fees = parseAmount(po.admin_fees ?? 0);
                     const upfrontDue = deposit + fees;
                     const loanAmount = parseAmount(po.loan_amount ?? 0);
-                    const repaymentAmount = parseAmount(po.repayment_amount ?? 0);
                     const tenor = Number(po.tenor) || 0;
                     const interestRate = po.interest_rate != null ? Number(po.interest_rate) : null;
-                    const totalInterest = repaymentAmount > 0 && loanAmount > 0
-                        ? Math.max(repaymentAmount - loanAmount, 0)
-                        : 0;
+                    // Loan Summary formula: interest = loan × (rate%/100) × tenor; repayment = loan + interest
+                    const storedRepayment = parseAmount(po.repayment_amount ?? 0);
+                    const computedInterest =
+                        loanAmount > 0 && interestRate != null && Number.isFinite(interestRate) && tenor > 0
+                            ? Math.round(loanAmount * (interestRate / 100) * tenor * 100) / 100
+                            : 0;
+                    const totalInterest = computedInterest > 0
+                        ? computedInterest
+                        : (storedRepayment > 0 && loanAmount > 0
+                            ? Math.max(storedRepayment - loanAmount, 0)
+                            : 0);
+                    const repaymentAmount = computedInterest > 0
+                        ? Math.round((loanAmount + computedInterest) * 100) / 100
+                        : storedRepayment;
                     const monthlyRepayment = tenor > 0 && repaymentAmount > 0
-                        ? repaymentAmount / tenor
+                        ? Math.round((repaymentAmount / tenor) * 100) / 100
                         : 0;
                     const interestLabel = interestRate != null && tenor > 0
                         ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
