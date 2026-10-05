@@ -1234,13 +1234,10 @@ const BNPLLoanDetails = () => {
                     const interestLabel = interestRate != null && tenor > 0
                         ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
                         : 'Total Interest Amount';
-                    const snapPct = Number(
-                        order?.loan_plan_snapshot?.depositPercent
-                        ?? order?.loan_details?.depositPercent
-                        ?? order?.loan_calculation?.deposit_percent
-                    );
-                    let depositPct = Number.isFinite(snapPct) && snapPct > 0 && snapPct <= 100
-                        ? snapPct
+                    // Use the partner-offer % (what admin set), not the customer's original snapshot %.
+                    const partnerPct = Number(po.deposit_percent ?? po.depositPercent);
+                    let depositPct = Number.isFinite(partnerPct) && partnerPct > 0 && partnerPct <= 100
+                        ? partnerPct
                         : 0;
                     if (!(depositPct > 0) && deposit > 0 && loanAmount > 0) {
                         depositPct = (deposit / (deposit + loanAmount)) * 100;
