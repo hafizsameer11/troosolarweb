@@ -205,7 +205,7 @@ const BNPLLoanDetails = () => {
                               totalInterestAmount: snap.totalInterestAmount ?? snap.totalInterest,
                               totalRepaymentAmount: snap.totalRepaymentAmount ?? snap.totalRepayment,
                               monthlyRepaymentAmount: snap.monthlyRepaymentAmount ?? snap.monthlyRepayment,
-                              depositPercent: snap.depositPercent,
+                              depositPercent: snap.depositPercent ?? snap.deposit_percent,
                               insuranceFee: snap.insuranceFee,
                               managementFee: snap.managementFee,
                               legalFee: snap.legalFee,
@@ -231,6 +231,8 @@ const BNPLLoanDetails = () => {
                         tenor: apiLd.tenor ?? apiLd.repayment_duration,
                         interestRate: apiLd.interestRate ?? apiLd.interest_rate,
                         repayment_duration: apiLd.repayment_duration,
+                        depositPercent: apiLd.depositPercent ?? apiLd.deposit_percent,
+                        baseDepositAmount: apiLd.baseDepositAmount ?? apiLd.base_deposit_amount,
                     };
                 };
                 const mappedFromApiLd = mapApiLoanDetails(orderDetails.loan_details);
@@ -351,7 +353,7 @@ const BNPLLoanDetails = () => {
                               totalInterestAmount: snap.totalInterestAmount ?? snap.totalInterest,
                               totalRepaymentAmount: snap.totalRepaymentAmount ?? snap.totalRepayment,
                               monthlyRepaymentAmount: snap.monthlyRepaymentAmount ?? snap.monthlyRepayment,
-                              depositPercent: snap.depositPercent,
+                              depositPercent: snap.depositPercent ?? snap.deposit_percent,
                               insuranceFee: snap.insuranceFee,
                               managementFee: snap.managementFee,
                               legalFee: snap.legalFee,
@@ -1232,11 +1234,31 @@ const BNPLLoanDetails = () => {
                     const interestLabel = interestRate != null && tenor > 0
                         ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
                         : 'Total Interest Amount';
+                    const snapPct = Number(
+                        order?.loan_plan_snapshot?.depositPercent
+                        ?? order?.loan_details?.depositPercent
+                        ?? order?.loan_calculation?.deposit_percent
+                    );
+                    let depositPct = Number.isFinite(snapPct) && snapPct > 0 && snapPct <= 100
+                        ? snapPct
+                        : 0;
+                    if (!(depositPct > 0) && deposit > 0 && loanAmount > 0) {
+                        depositPct = (deposit / (deposit + loanAmount)) * 100;
+                    }
+                    const depositPctLabel = depositPct > 0
+                        ? `${Math.abs(depositPct - Math.round(depositPct)) < 0.05
+                            ? Math.round(depositPct)
+                            : Math.round(depositPct * 100) / 100}%`
+                        : null;
                     const summaryRows = [
                         {
-                            label: fees > 0
-                                ? 'Initial Deposit + Total Administrative Fees'
-                                : 'Initial Deposit',
+                            label: depositPctLabel
+                                ? (fees > 0
+                                    ? `Initial Deposit (${depositPctLabel}) + Total Administrative Fees`
+                                    : `Initial Deposit (${depositPctLabel})`)
+                                : (fees > 0
+                                    ? 'Initial Deposit + Total Administrative Fees'
+                                    : 'Initial Deposit'),
                             value: upfrontDue,
                         },
                         { label: 'Total Loan Amount', value: loanAmount },
@@ -1753,7 +1775,12 @@ const BNPLLoanDetails = () => {
                         explicitLoanAmount > 0
                             ? explicitLoanAmount
                             : Math.max(totalAmount - initialDepositWithFees, 0);
-                    const depositPercentRaw = pickNum(ld?.depositPercent);
+                    const depositPercentRaw = pickNum(
+                        ld?.depositPercent,
+                        ld?.deposit_percent,
+                        loanCalc?.deposit_percent,
+                        loanCalc?.depositPercent
+                    );
                     let depositPercentForLabel = depositPercentRaw;
                     if (!depositPercentForLabel || depositPercentForLabel <= 0) {
                         const baseDep = pickNum(ld?.baseDepositAmount);
@@ -1764,6 +1791,12 @@ const BNPLLoanDetails = () => {
                             if (baseOnly > 0) {
                                 depositPercentForLabel = Math.round((baseOnly / bundlePriceApprox) * 100);
                             }
+                        }
+                    }
+                    if (!depositPercentForLabel || depositPercentForLabel <= 0) {
+                        const equity = pickNum(ld?.baseDepositAmount) || Math.max(initialDepositWithFees - adminFeesTotal, 0);
+                        if (equity > 0 && totalLoanAmount > 0) {
+                            depositPercentForLabel = Math.round((equity / (equity + totalLoanAmount)) * 100);
                         }
                     }
                     const interestRatePercent =
@@ -1817,7 +1850,7 @@ const BNPLLoanDetails = () => {
                             bundlePriceApprox > 0 ? Math.round((baseDeposit / bundlePriceApprox) * 100) : depositPercentForLabel;
                     }
                     const depositLabelPct =
-                        depositPercentForLabel > 0 ? `${depositPercentForLabel}%` : '—';
+                        depositPercentForLabel > 0 ? `${depositPercentForLabel}%` : null;
 
                     // Partner path uses the first/simple calculator (deposit + tenor only) — not Troosolar full breakdown.
                     const snapFinancingPath = String(
@@ -1851,13 +1884,13 @@ const BNPLLoanDetails = () => {
                     const partnerDepositLabelPct =
                         depositPercentRaw > 0
                             ? `${depositPercentRaw}%`
-                            : (depositPercentForLabel > 0 ? `${depositPercentForLabel}%` : '—');
+                            : (depositPercentForLabel > 0 ? `${depositPercentForLabel}%` : null);
 
                     const summaryRows = isPartnerFinancing
                         ? [
                             { label: 'Total Amount', value: partnerTotalAmount },
                             {
-                                label: partnerDepositLabelPct !== '—'
+                                label: partnerDepositLabelPct
                                     ? `Initial Deposit (${partnerDepositLabelPct})`
                                     : 'Initial Deposit',
                                 value: partnerInitialDeposit,
@@ -1867,7 +1900,9 @@ const BNPLLoanDetails = () => {
                         ]
                         : [
                             {
-                                label: `Initial Deposit (${depositLabelPct}) + Total Administrative Fees`,
+                                label: depositLabelPct
+                                    ? `Initial Deposit (${depositLabelPct}) + Total Administrative Fees`
+                                    : 'Initial Deposit + Total Administrative Fees',
                                 value: initialDepositWithFees,
                             },
                             { label: 'Total Loan Amount', value: totalLoanAmount },

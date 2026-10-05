@@ -5050,6 +5050,7 @@ const BNPLFlow = () => {
                             ...prev,
                             loanDetails: {
                                 ...prev.loanDetails,
+                                depositPercent: snapshot.depositPercent,
                                 bundlePrice: snapshot.bundlePrice,
                                 totalAmount: snapshot.totalAmount,
                                 baseDepositAmount: snapshot.depositAmount,

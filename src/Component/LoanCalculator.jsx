@@ -176,13 +176,13 @@ const LoanCalculator = ({
       if (isSimpleBreakdown) {
         return [
           { label: 'Total Amount', value: formatPlain(grandTotal) },
-          { label: 'Initial Deposit', value: `−${formatPlain(depositAmount)}`, accent: 'red' },
+          { label: `Initial Deposit (${depositPercent}%)`, value: `−${formatPlain(depositAmount)}`, accent: 'red' },
           { label: 'Total Loan Amount', value: formatPlain(principal) },
         ];
       }
       return [
         { label: 'Total Amount', value: formatPlain(grandTotal) },
-        { label: 'Initial Deposit', value: `−${formatPlain(depositAmount)}`, accent: 'red' },
+        { label: `Initial Deposit (${depositPercent}%)`, value: `−${formatPlain(depositAmount)}`, accent: 'red' },
         { label: 'Total Loan Amount', value: formatPlain(principal) },
         { label: 'Interest Rate (monthly)', value: interestRateLabel },
         { label: `Total Interest Amount (${interestRateLabel} × ${tenor} mo)`, value: formatPlain(totalInterest), accent: 'orange' },
