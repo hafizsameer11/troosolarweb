@@ -1245,7 +1245,7 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
-                {/* Partner Offer Section — Loan Summary style + Pay Down Payment */}
+                {/* Partner Offer — keep original customer choice + show partner terms */}
                 {isApplication && displayStatus?.toLowerCase() === 'partner_offer' && (() => {
                     const po = order.partner_offer || {};
                     const deposit = parseAmount(po.initial_deposit ?? 0);
@@ -1287,7 +1287,7 @@ const BNPLLoanDetails = () => {
                             ? Math.round(depositPct)
                             : Math.round(depositPct * 100) / 100}%`
                         : null;
-                    const summaryRows = [
+                    const offerRows = [
                         {
                             label: depositPctLabel
                                 ? (fees > 0
@@ -1308,79 +1308,207 @@ const BNPLLoanDetails = () => {
                         !order.order_id &&
                         !order.down_payment_completed;
 
+                    // Customer's original application choice (from snapshot) — must stay visible with the offer.
+                    const pickOrig = (...vals) => {
+                        for (const v of vals) {
+                            if (v === null || v === undefined || v === '') continue;
+                            const n = parseAmount(v);
+                            if (Number.isFinite(n)) return n;
+                        }
+                        return 0;
+                    };
+                    const snapPath = String(
+                        order?.financing_path
+                            || loanApp?.financing_path
+                            || order?.loan_plan_snapshot?.financing?.path
+                            || loanApp?.loan_plan_snapshot?.financing?.path
+                            || ''
+                    ).toLowerCase();
+                    const isPartnerFinancingOrig =
+                        snapPath === 'partner'
+                        || String(order?.credit_check_method || loanApp?.credit_check_method || '').toLowerCase() === 'partner';
+                    const origTenor = pickOrig(ld?.tenor, loanCalc?.repayment_duration, loanApp?.repayment_duration);
+                    const origDepositPctRaw = pickOrig(ld?.depositPercent, ld?.deposit_percent);
+                    const origTotalAmount = pickOrig(
+                        ld?.totalAmount, ld?.grandTotal, ld?.invoiceGrandTotal, loanCalc?.total_amount
+                    );
+                    const origInitialDeposit = pickOrig(
+                        ld?.baseDepositAmount, ld?.depositAmount, ld?.down_payment, loanCalc?.down_payment
+                    );
+                    const origLoanAmount = pickOrig(
+                        ld?.totalLoanAmount, ld?.principal, loanCalc?.principal_amount
+                    ) || Math.max(origTotalAmount - origInitialDeposit, 0);
+                    const origInterestRate = Number(ld?.interestRate ?? ld?.interest_rate ?? loanCalc?.interest_rate);
+                    const origTotalInterest = pickOrig(
+                        ld?.totalInterestAmount, ld?.totalInterest
+                    ) || (
+                        origLoanAmount > 0 && Number.isFinite(origInterestRate) && origTenor > 0
+                            ? Math.round(origLoanAmount * (origInterestRate / 100) * origTenor * 100) / 100
+                            : 0
+                    );
+                    const origRepayment = pickOrig(
+                        ld?.totalRepaymentAmount, ld?.totalRepayment, loanCalc?.total_repayment
+                    ) || (origLoanAmount + origTotalInterest);
+                    const origMonthly = pickOrig(
+                        ld?.monthlyRepaymentAmount, ld?.monthlyRepayment, loanCalc?.monthly_repayment
+                    ) || (origTenor > 0 ? Math.round((origRepayment / origTenor) * 100) / 100 : 0);
+                    const origDepositPctLabel = origDepositPctRaw > 0
+                        ? `${Math.abs(origDepositPctRaw - Math.round(origDepositPctRaw)) < 0.05
+                            ? Math.round(origDepositPctRaw)
+                            : Math.round(origDepositPctRaw * 100) / 100}%`
+                        : (origTotalAmount > 0 && origInitialDeposit > 0
+                            ? `${Math.round((origInitialDeposit / origTotalAmount) * 100)}%`
+                            : null);
+                    const originalRows = isPartnerFinancingOrig
+                        ? [
+                            { label: 'Total Amount', value: origTotalAmount },
+                            {
+                                label: origDepositPctLabel
+                                    ? `Initial Deposit (${origDepositPctLabel})`
+                                    : 'Initial Deposit',
+                                value: origInitialDeposit,
+                                accent: 'red',
+                            },
+                            { label: 'Total Loan Amount', value: origLoanAmount },
+                        ]
+                        : [
+                            {
+                                label: origDepositPctLabel
+                                    ? `Initial Deposit (${origDepositPctLabel}) + Total Administrative Fees`
+                                    : 'Initial Deposit + Total Administrative Fees',
+                                value: pickOrig(ld?.depositAmount, loanCalc?.down_payment, origInitialDeposit),
+                            },
+                            { label: 'Total Loan Amount', value: origLoanAmount },
+                            {
+                                label: Number.isFinite(origInterestRate) && origTenor > 0
+                                    ? `Total Interest Amount (${origInterestRate}% × ${origTenor} mo)`
+                                    : 'Total Interest Amount',
+                                value: origTotalInterest,
+                            },
+                            { label: 'Total Repayment Amount', value: origRepayment },
+                            { label: 'Monthly Repayment Amount', value: origMonthly },
+                        ];
+                    const hasOriginalChoice = originalRows.some((r) => Number(r.value) > 0) || origTenor > 0;
+
                     return (
-                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl shadow-sm border border-green-200 p-6">
-                        <div className="flex items-center gap-3 mb-2">
-                            <span className="text-[#273e8e] text-2xl font-bold" aria-hidden="true">₦</span>
-                            <h3 className="text-xl font-semibold text-gray-800">Partner Financing Offer</h3>
-                        </div>
-                        <p className="text-sm text-gray-600 mb-4">
-                            {(() => {
-                                const customWriteup = String(po.writeup || '').trim();
-                                if (customWriteup) return customWriteup;
-                                const docsSuffix =
-                                    (po.documents || []).length > 0
-                                        ? ' and check your email for supporting documents.'
-                                        : '.';
-                                return `A financing partner has provided an offer for your application. Review the terms below${docsSuffix}`;
-                            })()}
-                        </p>
-                        {order.admin_notes && (
-                            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <p className="text-sm text-gray-700">
-                                    <strong>Admin Note:</strong> {order.admin_notes}
+                    <div className="space-y-6">
+                        {hasOriginalChoice && (
+                            <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl shadow-sm border border-gray-200 p-6">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <span className="text-[#273e8e] text-2xl font-bold" aria-hidden="true">₦</span>
+                                    <h3 className="text-xl font-semibold text-gray-800">
+                                        Your Original Choice
+                                    </h3>
+                                </div>
+                                <p className="text-sm text-gray-600 mb-4">
+                                    What you selected when you applied
+                                    {isPartnerFinancingOrig ? ' (Financing Summary).' : ' (Loan Summary).'}
                                 </p>
+                                <div className="space-y-3">
+                                    {originalRows.map((row, index) => (
+                                        <div
+                                            key={`orig-${row.label}`}
+                                            className="bg-white rounded-lg p-4 border border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                                        >
+                                            <p className="text-sm font-medium text-gray-800">{row.label}</p>
+                                            <p className={`text-xl font-bold ${
+                                                row.accent === 'red'
+                                                    ? 'text-red-600'
+                                                    : !isPartnerFinancingOrig && index === 4
+                                                        ? 'text-[#273e8e]'
+                                                        : 'text-gray-800'
+                                            }`}>
+                                                {row.accent === 'red' ? '−' : ''}{formatCurrency(row.value)}
+                                            </p>
+                                        </div>
+                                    ))}
+                                    <div className="border-t border-gray-200 pt-3 mt-1">
+                                        <div className="bg-white rounded-lg p-4 border border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                            <p className="text-sm font-medium text-gray-800">Loan Tenor</p>
+                                            <p className="text-xl font-bold text-[#273e8e]">
+                                                {origTenor > 0
+                                                    ? `${origTenor} ${origTenor === 1 ? 'month' : 'months'}`
+                                                    : '—'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
-                        <div className="space-y-3">
-                            {summaryRows.map((row, index) => (
-                                <div
-                                    key={row.label}
-                                    className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
-                                >
-                                    <p className="text-sm font-medium text-gray-800">{row.label}</p>
-                                    <p className={`text-xl font-bold ${
-                                        index === 4 ? 'text-[#273e8e]' : 'text-gray-800'
-                                    }`}>
-                                        {formatCurrency(row.value)}
-                                    </p>
-                                </div>
-                            ))}
-                            <div className="border-t border-green-200 pt-3 mt-1">
-                                <div className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                                    <p className="text-sm font-medium text-gray-800">Loan Tenor</p>
-                                    <p className="text-xl font-bold text-[#273e8e]">
-                                        {tenor > 0 ? `${tenor} ${tenor === 1 ? 'month' : 'months'}` : '—'}
-                                    </p>
-                                </div>
+
+                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl shadow-sm border border-green-200 p-6">
+                            <div className="flex items-center gap-3 mb-2">
+                                <span className="text-[#273e8e] text-2xl font-bold" aria-hidden="true">₦</span>
+                                <h3 className="text-xl font-semibold text-gray-800">Partner Financing Offer</h3>
                             </div>
-                        </div>
-                        {canPay ? (
-                            <div className="mt-4 bg-white rounded-lg p-4 border-2 border-[#273e8e]">
-                                <p className="text-sm text-gray-600 mb-2">
-                                    Pay your down payment to proceed with your order.
-                                </p>
-                                <button
-                                    type="button"
-                                    onClick={() => handlePayDownPayment(upfrontDue)}
-                                    disabled={processingDownPayment}
-                                    className="w-full sm:w-auto px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {processingDownPayment ? (
-                                        <>Processing...</>
-                                    ) : (
-                                        <>
-                                            <CreditCard size={20} />
-                                            Pay Down Payment ({formatCurrency(upfrontDue)})
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        ) : (
-                            <p className="text-sm text-gray-600 mt-4">
-                                Our team will follow up with next steps. You can also contact support if you have questions about this offer.
+                            <p className="text-sm text-gray-600 mb-4">
+                                {(() => {
+                                    const customWriteup = String(po.writeup || '').trim();
+                                    if (customWriteup) return customWriteup;
+                                    const docsSuffix =
+                                        (po.documents || []).length > 0
+                                            ? ' and check your email for supporting documents.'
+                                            : '.';
+                                    return `A financing partner has provided an offer for your application. Review the terms below${docsSuffix}`;
+                                })()}
                             </p>
-                        )}
+                            {order.admin_notes && (
+                                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <p className="text-sm text-gray-700">
+                                        <strong>Admin Note:</strong> {order.admin_notes}
+                                    </p>
+                                </div>
+                            )}
+                            <div className="space-y-3">
+                                {offerRows.map((row, index) => (
+                                    <div
+                                        key={row.label}
+                                        className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                                    >
+                                        <p className="text-sm font-medium text-gray-800">{row.label}</p>
+                                        <p className={`text-xl font-bold ${
+                                            index === 4 ? 'text-[#273e8e]' : 'text-gray-800'
+                                        }`}>
+                                            {formatCurrency(row.value)}
+                                        </p>
+                                    </div>
+                                ))}
+                                <div className="border-t border-green-200 pt-3 mt-1">
+                                    <div className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                        <p className="text-sm font-medium text-gray-800">Loan Tenor</p>
+                                        <p className="text-xl font-bold text-[#273e8e]">
+                                            {tenor > 0 ? `${tenor} ${tenor === 1 ? 'month' : 'months'}` : '—'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {canPay ? (
+                                <div className="mt-4 bg-white rounded-lg p-4 border-2 border-[#273e8e]">
+                                    <p className="text-sm text-gray-600 mb-2">
+                                        Pay your down payment to proceed with your order.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => handlePayDownPayment(upfrontDue)}
+                                        disabled={processingDownPayment}
+                                        className="w-full sm:w-auto px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        {processingDownPayment ? (
+                                            <>Processing...</>
+                                        ) : (
+                                            <>
+                                                <CreditCard size={20} />
+                                                Pay Down Payment ({formatCurrency(upfrontDue)})
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-gray-600 mt-4">
+                                    Our team will follow up with next steps. You can also contact support if you have questions about this offer.
+                                </p>
+                            )}
+                        </div>
                     </div>
                     );
                 })()}
