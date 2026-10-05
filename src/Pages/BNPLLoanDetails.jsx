@@ -1315,10 +1315,15 @@ const BNPLLoanDetails = () => {
                             <h3 className="text-xl font-semibold text-gray-800">Partner Financing Offer</h3>
                         </div>
                         <p className="text-sm text-gray-600 mb-4">
-                            A financing partner has provided an offer for your application. Review the terms below
-                            {(po.documents || []).length > 0
-                                ? ' and check your email for supporting documents.'
-                                : '.'}
+                            {(() => {
+                                const customWriteup = String(po.writeup || '').trim();
+                                if (customWriteup) return customWriteup;
+                                const docsSuffix =
+                                    (po.documents || []).length > 0
+                                        ? ' and check your email for supporting documents.'
+                                        : '.';
+                                return `A financing partner has provided an offer for your application. Review the terms below${docsSuffix}`;
+                            })()}
                         </p>
                         {order.admin_notes && (
                             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
