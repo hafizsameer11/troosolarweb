@@ -11,6 +11,16 @@ import {
 const fieldClass = 'p-3 border rounded-lg w-full';
 const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
 
+/** Digits only (for storage / API). */
+const stripMoneyInput = (raw) => String(raw ?? '').replace(/[^\d]/g, '');
+
+/** Display money with thousand separators, e.g. 4000000 → 4,000,000 */
+const formatMoneyDisplay = (raw) => {
+  const digits = stripMoneyInput(raw);
+  if (!digits) return '';
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
 /**
  * BNPL Final Application — residential vs SME field sets + Finance Agreement.
  * Partner Financing also collects bank statement + ID photo on this form.
@@ -27,6 +37,7 @@ const BnplFinalApplicationForm = ({
 }) => {
   const isSme = String(formData.customerType || '').toLowerCase() === 'sme';
   const isPartnerPath = String(formData.financingPath || '').toLowerCase() === 'partner';
+  const idTypeNeedsExpiry = String(formData.idType || '').toLowerCase() !== 'nin';
   const [showAgreement, setShowAgreement] = useState(false);
   const [cameraStream, setCameraStream] = useState(null);
   const cameraVideoRef = useRef(null);
@@ -108,9 +119,12 @@ const BnplFinalApplicationForm = ({
       'maritalStatus',
       'socialMedia',
       'idType',
-      'idExpiryDate',
       'idNo',
     ];
+    // NIN has no expiry — only passport / driver's license require an expiry date.
+    if (idTypeNeedsExpiry) {
+      requiredPersonal.push('idExpiryDate');
+    }
     if (!isSme) {
       requiredPersonal.push('dateOfBirth', 'occupation', 'monthlyIncome');
     }
@@ -283,7 +297,15 @@ const BnplFinalApplicationForm = ({
                 </div>
                 <div>
                   <label className={labelClass}>Monthly Income *</label>
-                  <input type="number" min="0" className={fieldClass} value={formData.monthlyIncome || ''} onChange={(e) => set({ monthlyIncome: e.target.value })} required />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className={`${fieldClass} tabular-nums`}
+                    value={formatMoneyDisplay(formData.monthlyIncome)}
+                    onChange={(e) => set({ monthlyIncome: stripMoneyInput(e.target.value) })}
+                    placeholder="e.g. 4,000,000"
+                    required
+                  />
                 </div>
               </>
             )}
@@ -303,13 +325,27 @@ const BnplFinalApplicationForm = ({
                 name="idType"
                 options={ID_TYPE_OPTIONS}
                 value={formData.idType || ''}
-                onChange={(v) => set({ idType: v })}
+                onChange={(v) =>
+                  set({
+                    idType: v,
+                    // NIN has no expiry date — clear any value left from passport/license.
+                    ...(String(v).toLowerCase() === 'nin' ? { idExpiryDate: '' } : {}),
+                  })
+                }
               />
             </div>
-            <div>
-              <label className={labelClass}>ID Expiry Date *</label>
-              <input type="date" className={fieldClass} value={formData.idExpiryDate || ''} onChange={(e) => set({ idExpiryDate: e.target.value })} required />
-            </div>
+            {idTypeNeedsExpiry && (
+              <div>
+                <label className={labelClass}>ID Expiry Date *</label>
+                <input
+                  type="date"
+                  className={fieldClass}
+                  value={formData.idExpiryDate || ''}
+                  onChange={(e) => set({ idExpiryDate: e.target.value })}
+                  required
+                />
+              </div>
+            )}
             <div>
               <label className={labelClass}>ID No *</label>
               <input className={fieldClass} value={formData.idNo || ''} onChange={(e) => set({ idNo: e.target.value })} required />
@@ -466,11 +502,27 @@ const BnplFinalApplicationForm = ({
               </div>
               <div>
                 <label className={labelClass}>Annual Turnover *</label>
-                <input type="number" min="0" className={fieldClass} value={formData.annualTurnover || ''} onChange={(e) => set({ annualTurnover: e.target.value })} required />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className={`${fieldClass} tabular-nums`}
+                  value={formatMoneyDisplay(formData.annualTurnover)}
+                  onChange={(e) => set({ annualTurnover: stripMoneyInput(e.target.value) })}
+                  placeholder="e.g. 12,000,000"
+                  required
+                />
               </div>
               <div>
                 <label className={labelClass}>Avg. Monthly Turnover *</label>
-                <input type="number" min="0" className={fieldClass} value={formData.avgMonthlyTurnover || ''} onChange={(e) => set({ avgMonthlyTurnover: e.target.value })} required />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className={`${fieldClass} tabular-nums`}
+                  value={formatMoneyDisplay(formData.avgMonthlyTurnover)}
+                  onChange={(e) => set({ avgMonthlyTurnover: stripMoneyInput(e.target.value) })}
+                  placeholder="e.g. 1,000,000"
+                  required
+                />
               </div>
               <div>
                 <label className={labelClass}>Date of Incorporation *</label>
