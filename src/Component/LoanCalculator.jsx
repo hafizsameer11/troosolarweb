@@ -541,9 +541,11 @@ const LoanCalculator = ({
                       <span className="text-gray-700">Total administrative fees</span>
                       <span>{formatCurrency(administrativeFees)}</span>
                     </div>
-                    <div className="flex justify-between text-sm font-semibold text-[#273e8e] pt-1 border-t">
-                      <span>Upfront (deposit + fees)</span>
-                      <span>{formatCurrency(upfrontDue)}</span>
+                    <div className="flex justify-between text-sm font-semibold text-[#273e8e] pt-1 border-t gap-3">
+                      <span className="min-w-0">
+                        Upfront Payment ({depositPercent}% Initial Deposit + Total Administrative Fees)
+                      </span>
+                      <span className="shrink-0 tabular-nums">{formatCurrency(upfrontDue)}</span>
                     </div>
                   </div>
                 </>
