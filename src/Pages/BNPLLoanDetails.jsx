@@ -237,6 +237,20 @@ const BNPLLoanDetails = () => {
                 };
                 const mappedFromApiLd = mapApiLoanDetails(orderDetails.loan_details);
 
+                const partnerOfferFromLa = la
+                    ? {
+                          interest_rate: la.partner_offer_interest_rate ?? orderDetails.partner_offer?.interest_rate ?? null,
+                          deposit_percent: la.partner_offer_deposit_percent ?? orderDetails.partner_offer?.deposit_percent ?? null,
+                          initial_deposit: la.partner_offer_initial_deposit ?? orderDetails.partner_offer?.initial_deposit ?? null,
+                          admin_fees: la.partner_offer_admin_fees ?? orderDetails.partner_offer?.admin_fees ?? null,
+                          repayment_amount: la.partner_offer_repayment_amount ?? orderDetails.partner_offer?.repayment_amount ?? null,
+                          loan_amount: la.partner_offer_loan_amount ?? orderDetails.partner_offer?.loan_amount ?? null,
+                          tenor: la.partner_offer_tenor ?? orderDetails.partner_offer?.tenor ?? null,
+                          writeup: la.partner_offer_writeup ?? orderDetails.partner_offer?.writeup ?? null,
+                          documents: la.partner_offer_documents ?? orderDetails.partner_offer?.documents ?? [],
+                      }
+                    : (orderDetails.partner_offer || null);
+
                 // Normalize the order data structure
                 const normalizedOrder = {
                     ...orderDetails,
@@ -249,6 +263,9 @@ const BNPLLoanDetails = () => {
                     loan_plan_snapshot: snap || orderDetails.loan_plan_snapshot,
                     loan_calculation: orderDetails.loan_calculation ?? null,
                     loan_details: mappedFromSnap || mappedFromApiLd || orderDetails.loan_details,
+                    financing_path: orderDetails.financing_path || la?.financing_path || null,
+                    admin_notes: orderDetails.admin_notes || la?.admin_notes || null,
+                    partner_offer: partnerOfferFromLa,
                     isApplication: false // This is an order, not an application
                 };
                 
@@ -947,10 +964,17 @@ const BNPLLoanDetails = () => {
             }
         }
 
-        // For applications, use application status (partner_offer must win over a stale pending)
+        // For applications, use application status (partner_offer must win over a stale pending,
+        // but must not override approved/rejected after down payment).
         if (isApplication) {
             const appStatus = String(order.status || loanApp?.status || '').toLowerCase();
-            if (appStatus === 'partner_offer' || hasPartnerOfferTerms) {
+            if (appStatus === 'partner_offer') {
+                return 'partner_offer';
+            }
+            if (
+                hasPartnerOfferTerms &&
+                (appStatus === 'pending' || appStatus === 'processing' || !appStatus)
+            ) {
                 return 'partner_offer';
             }
             if (order.status) return order.status;
@@ -985,6 +1009,18 @@ const BNPLLoanDetails = () => {
         const displayStatus = getDisplayStatus(order);
         const statusLower = String(displayStatus || '').toLowerCase();
         const isPartnerOfferStatus = statusLower === 'partner_offer';
+        const poTerms = order.partner_offer || {};
+        const laPartner = loanApp || {};
+        // Partner offer terms must stay visible after down payment (status becomes approved).
+        const hasPartnerOfferTerms = !!(
+            (poTerms.loan_amount != null && poTerms.loan_amount !== '') ||
+            (poTerms.initial_deposit != null && poTerms.initial_deposit !== '') ||
+            (poTerms.repayment_amount != null && poTerms.repayment_amount !== '') ||
+            laPartner.partner_offer_loan_amount != null ||
+            laPartner.partner_offer_initial_deposit != null ||
+            laPartner.partner_offer_repayment_amount != null
+        );
+        const showPartnerOfferSection = isPartnerOfferStatus || hasPartnerOfferTerms;
         // Installments / overdue belong only to orders after down payment — never to offer/pending apps.
         const showRepaymentUi =
             !isApplication ||
@@ -1245,9 +1281,22 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
-                {/* Partner Offer — keep original customer choice + show partner terms */}
-                {isApplication && displayStatus?.toLowerCase() === 'partner_offer' && (() => {
-                    const po = order.partner_offer || {};
+                {/* Partner Offer — keep original customer choice + show partner terms (even after approval / on order view) */}
+                {showPartnerOfferSection && (() => {
+                    const po = {
+                        ...(order.partner_offer || {}),
+                    };
+                    if (po.loan_amount == null && loanApp?.partner_offer_loan_amount != null) {
+                        po.interest_rate = loanApp.partner_offer_interest_rate;
+                        po.deposit_percent = loanApp.partner_offer_deposit_percent;
+                        po.initial_deposit = loanApp.partner_offer_initial_deposit;
+                        po.admin_fees = loanApp.partner_offer_admin_fees;
+                        po.repayment_amount = loanApp.partner_offer_repayment_amount;
+                        po.loan_amount = loanApp.partner_offer_loan_amount;
+                        po.tenor = loanApp.partner_offer_tenor;
+                        po.writeup = loanApp.partner_offer_writeup;
+                        po.documents = loanApp.partner_offer_documents || [];
+                    }
                     const deposit = parseAmount(po.initial_deposit ?? 0);
                     const fees = parseAmount(po.admin_fees ?? 0);
                     const upfrontDue = deposit + fees;
@@ -1503,6 +1552,10 @@ const BNPLLoanDetails = () => {
                                         )}
                                     </button>
                                 </div>
+                            ) : (order.order_id || order.down_payment_completed || !isApplication) ? (
+                                <p className="text-sm text-green-700 mt-4 font-medium">
+                                    Down payment completed for this partner offer.
+                                </p>
                             ) : (
                                 <p className="text-sm text-gray-600 mt-4">
                                     Our team will follow up with next steps. You can also contact support if you have questions about this offer.
@@ -1859,8 +1912,8 @@ const BNPLLoanDetails = () => {
                 )}
 
                 {/* Loan Calculation / Repayment Breakdown — mirror BNPL flow summary */}
-                {/* Hidden for partner_offer: dedicated Partner Financing Offer section above covers this */}
-                {(loanCalc || ld) && !isPartnerOfferStatus && (() => {
+                {/* Hidden when Partner Offer section already shows Your Original Choice (avoids duplicate). */}
+                {(loanCalc || ld) && !showPartnerOfferSection && (() => {
                     const toNum = (v) => {
                         if (v === null || v === undefined || v === '') return null;
                         const n = parseAmount(v);
