@@ -485,8 +485,14 @@ const BnplFinalApplicationForm = ({
                 <input className={fieldClass} value={formData.businessName || ''} onChange={(e) => set({ businessName: e.target.value })} required />
               </div>
               <div>
-                <label className={labelClass}>Business RC/BN *</label>
-                <input className={fieldClass} value={formData.businessRcBn || ''} onChange={(e) => set({ businessRcBn: e.target.value })} required />
+                <label className={labelClass}>Business Registration Number (RC, BN or other) *</label>
+                <input
+                  className={fieldClass}
+                  value={formData.businessRcBn || ''}
+                  onChange={(e) => set({ businessRcBn: e.target.value })}
+                  placeholder="e.g. RC123456 or BN1234567"
+                  required
+                />
               </div>
               <div className="md:col-span-2">
                 <label className={labelClass}>Business Address *</label>
