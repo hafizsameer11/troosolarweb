@@ -134,7 +134,20 @@ const SolarBundle = () => {
         });
 
         const arr = normalizeBundles(data);
-        setRawBundles(arr);
+        // Defensive: hide unavailable / empty shells and dedupe (catalog should match admin visibility).
+        const seen = new Set();
+        const cleaned = arr.filter((b) => {
+          const id = b?.id;
+          if (id != null) {
+            if (seen.has(id)) return false;
+            seen.add(id);
+          }
+          if (b?.is_available === false) return false;
+          if (!String(b?.title || "").trim()) return false;
+          if (!(Number(b?.total_price) > 0)) return false;
+          return true;
+        });
+        setRawBundles(cleaned);
       } catch (e) {
         setErr(
           e?.response?.data?.message || e?.message || "Failed to load bundles."

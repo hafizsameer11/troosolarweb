@@ -261,7 +261,12 @@ const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSu
         },
         customizations: {
           title: 'Loan Installment Payment',
-          description: `Installment #${installment.installment_number || installment.id}`,
+          description: `Installment #${
+            installment.installment_number ??
+            installment.sequence ??
+            installment.display_number ??
+            installment.id
+          }`,
           logo: 'https://yourdomain.com/logo.png'
         }
       });
@@ -327,7 +332,33 @@ const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSu
   const amount = parseFloat(installment.amount || 0);
   const shopBalance = parseFloat(walletBalance?.shop_balance || 0);
   const loanBalance = parseFloat(walletBalance?.loan_balance || 0);
-  const isOverdue = new Date(installment.due_date) < new Date() && installment.status !== 'paid';
+  // Backend stores due date as payment_date; some payloads also send due_date.
+  const dueDateRaw =
+    installment.due_date ||
+    installment.payment_date ||
+    installment.dueDate ||
+    installment.paymentDate ||
+    null;
+  const dueDateObj = dueDateRaw ? new Date(dueDateRaw) : null;
+  const dueDateValid = dueDateObj && !Number.isNaN(dueDateObj.getTime());
+  const installmentLabel =
+    installment.installment_number ??
+    installment.sequence ??
+    installment.display_number ??
+    installment.installmentNumber ??
+    null;
+  const isOverdue =
+    (installment.is_overdue ||
+      (dueDateValid && dueDateObj < new Date() && installment.status !== 'paid'));
+
+  const formatDueDate = () => {
+    if (!dueDateValid) return 'N/A';
+    return dueDateObj.toLocaleDateString('en-NG', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -355,7 +386,9 @@ const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSu
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">Installment #</span>
               <span className="text-sm font-semibold text-gray-800">
-                {installment.installment_number || 'N/A'}
+                {installmentLabel != null && installmentLabel !== ''
+                  ? installmentLabel
+                  : 'N/A'}
               </span>
             </div>
             <div className="flex justify-between">
@@ -367,7 +400,7 @@ const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSu
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">Due Date</span>
               <span className="text-sm font-semibold text-gray-800">
-                {new Date(installment.due_date).toLocaleDateString('en-NG')}
+                {formatDueDate()}
               </span>
             </div>
             {isOverdue && (

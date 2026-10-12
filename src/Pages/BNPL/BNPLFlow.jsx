@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Home, Building2, Factory, ArrowRight, ArrowLeft, Zap, Wrench, FileText, CheckCircle, Battery, Upload, CreditCard, Camera, Clock, Download, AlertCircle, Calendar, Loader, CheckCircle2, XCircle, X, Minus, Plus, Info, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, Building2, Factory, ArrowRight, ArrowLeft, Zap, Wrench, FileText, CheckCircle, Battery, Upload, CreditCard, Camera, Clock, Download, AlertCircle, Calendar, Loader, CheckCircle2, XCircle, X, Minus, Plus, Info, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import LoanCalculator from '../../Component/LoanCalculator';
 import AuditPreferredScheduleFields from '../../Component/AuditPreferredScheduleFields';
 import axios from 'axios';
@@ -32,10 +32,26 @@ import {
     entityHighlyRecommended,
 } from '../../utils/bundleSort';
 import { bundleBnplPrice, bundleBnplDisplay } from '../../utils/bundlePricing';
+import { getItemSearchText } from '../../utils/storeCatalog';
 import BnplFinalApplicationForm from '../../Component/BNPL/BnplFinalApplicationForm';
 import BnplFinancingPathStep from '../../Component/BNPL/BnplFinancingPathStep';
 
 const BUNDLE_STEP_GRID_PAGE_SIZE = 9;
+
+const catalogItemMatchesSearch = (item, query) => {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return true;
+    const haystack = [
+        getItemSearchText(item),
+        item?.product_model,
+        item?.description,
+        item?.short_description,
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+    return haystack.includes(q);
+};
 
 // Helper function to convert storage paths to absolute URLs (same as SolarBundle.jsx)
 const toAbsolute = (path) => {
@@ -483,6 +499,8 @@ const BNPLFlow = () => {
     const [selectedBundleDetails, setSelectedBundleDetails] = useState(null); // For "Learn More" modal
     const [bundleDetailTab, setBundleDetailTab] = useState('description'); // 'description' | 'specs'
     const [selectedSystemSize, setSelectedSystemSize] = useState("all"); // System size filter
+    const [bundleCatalogSearch, setBundleCatalogSearch] = useState('');
+    const [productCatalogSearch, setProductCatalogSearch] = useState('');
     const [bundleGridPage, setBundleGridPage] = useState(1);
     const [productGridPage, setProductGridPage] = useState(1);
     const [isSizeDropdownOpen, setIsSizeDropdownOpen] = useState(false);
@@ -657,28 +675,38 @@ const BNPLFlow = () => {
         return sortBundlesFeaturedThenKvaAsc(list);
     }, [bundlesMeetingMinLoan, selectedSystemSize]);
 
-    useEffect(() => {
-        setBundleGridPage(1);
-    }, [selectedSystemSize, bundles, bnplMinimumLoanAmount]);
+    const searchFilteredBundles = useMemo(
+        () => filteredBundles.filter((bundle) => catalogItemMatchesSearch(bundle, bundleCatalogSearch)),
+        [filteredBundles, bundleCatalogSearch]
+    );
 
     useEffect(() => {
-        const total = Math.max(1, Math.ceil(filteredBundles.length / BUNDLE_STEP_GRID_PAGE_SIZE));
+        setBundleGridPage(1);
+    }, [selectedSystemSize, bundles, bnplMinimumLoanAmount, bundleCatalogSearch]);
+
+    useEffect(() => {
+        const total = Math.max(1, Math.ceil(searchFilteredBundles.length / BUNDLE_STEP_GRID_PAGE_SIZE));
         setBundleGridPage((p) => (p > total ? total : p));
-    }, [filteredBundles.length]);
+    }, [searchFilteredBundles.length]);
 
     const orderedCategoryProducts = useMemo(
         () => sortCategoryProducts(categoryProducts, formData.productCategory),
         [categoryProducts, formData.productCategory]
     );
 
-    useEffect(() => {
-        setProductGridPage(1);
-    }, [formData.productCategory, categoryProducts.length]);
+    const searchFilteredProducts = useMemo(
+        () => orderedCategoryProducts.filter((product) => catalogItemMatchesSearch(product, productCatalogSearch)),
+        [orderedCategoryProducts, productCatalogSearch]
+    );
 
     useEffect(() => {
-        const total = Math.max(1, Math.ceil(orderedCategoryProducts.length / BUNDLE_STEP_GRID_PAGE_SIZE));
+        setProductGridPage(1);
+    }, [formData.productCategory, categoryProducts.length, productCatalogSearch]);
+
+    useEffect(() => {
+        const total = Math.max(1, Math.ceil(searchFilteredProducts.length / BUNDLE_STEP_GRID_PAGE_SIZE));
         setProductGridPage((p) => (p > total ? total : p));
-    }, [orderedCategoryProducts.length]);
+    }, [searchFilteredProducts.length]);
 
     // Close size dropdown if clicked outside
     useEffect(() => {
@@ -2067,10 +2095,11 @@ const BNPLFlow = () => {
         };
 
         const productGridStart = (productGridPage - 1) * BUNDLE_STEP_GRID_PAGE_SIZE;
-        const paginatedProducts = orderedCategoryProducts.slice(
+        const paginatedProducts = searchFilteredProducts.slice(
             productGridStart,
             productGridStart + BUNDLE_STEP_GRID_PAGE_SIZE
         );
+        const productSearchActive = String(productCatalogSearch || '').trim().length > 0;
 
         return (
             <div className="animate-fade-in">
@@ -2079,6 +2108,7 @@ const BNPLFlow = () => {
                         // Clear products when going back
                         setCategoryProducts([]);
                         setProductsLoading(false);
+                        setProductCatalogSearch('');
                         setProductGridPage(1);
                         setStep(2);
                     }} 
@@ -2089,9 +2119,27 @@ const BNPLFlow = () => {
                 <h2 className="text-3xl font-bold text-center mb-4 text-[#273e8e]">
                     Select Product
                 </h2>
-                <p className="text-center text-gray-600 mb-8">
+                <p className="text-center text-gray-600 mb-6">
                     Choose from available products in this category
                 </p>
+
+                {!productsLoading && orderedCategoryProducts.length > 0 && (
+                    <div className="max-w-md mx-auto mb-8 relative">
+                        <Search
+                            size={16}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                            aria-hidden="true"
+                        />
+                        <input
+                            type="search"
+                            value={productCatalogSearch}
+                            onChange={(e) => setProductCatalogSearch(e.target.value)}
+                            placeholder="Search products by name…"
+                            className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#273e8e]/40 focus:border-[#273e8e]"
+                            aria-label="Search products"
+                        />
+                    </div>
+                )}
 
                 {productsLoading ? (
                     <div className="text-center py-16">
@@ -2110,6 +2158,23 @@ const BNPLFlow = () => {
                         >
                             Go back to categories
                         </button>
+                    </div>
+                ) : searchFilteredProducts.length === 0 ? (
+                    <div className="text-center py-12 bg-white rounded-2xl border border-gray-200 max-w-6xl mx-auto">
+                        <p className="text-gray-600">
+                            {productSearchActive
+                                ? `No products match “${productCatalogSearch.trim()}”.`
+                                : 'No products available in this category.'}
+                        </p>
+                        {productSearchActive && (
+                            <button
+                                type="button"
+                                onClick={() => setProductCatalogSearch('')}
+                                className="mt-4 text-[#273e8e] hover:underline font-semibold text-sm"
+                            >
+                                Clear search
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <>
@@ -2211,7 +2276,7 @@ const BNPLFlow = () => {
 
                     <GridPagination
                         currentPage={productGridPage}
-                        totalItems={orderedCategoryProducts.length}
+                        totalItems={searchFilteredProducts.length}
                         pageSize={BUNDLE_STEP_GRID_PAGE_SIZE}
                         onPageChange={setProductGridPage}
                         itemLabel="products"
@@ -2462,9 +2527,10 @@ const BNPLFlow = () => {
         };
 
         const selectedSizeLabel = sizeOptions.find((o) => o.value === selectedSystemSize)?.label || "All Sizes";
-        const totalBundlePages = Math.max(1, Math.ceil(filteredBundles.length / BUNDLE_STEP_GRID_PAGE_SIZE));
+        const totalBundlePages = Math.max(1, Math.ceil(searchFilteredBundles.length / BUNDLE_STEP_GRID_PAGE_SIZE));
         const bundleGridStart = (bundleGridPage - 1) * BUNDLE_STEP_GRID_PAGE_SIZE;
-        const paginatedBundles = filteredBundles.slice(bundleGridStart, bundleGridStart + BUNDLE_STEP_GRID_PAGE_SIZE);
+        const paginatedBundles = searchFilteredBundles.slice(bundleGridStart, bundleGridStart + BUNDLE_STEP_GRID_PAGE_SIZE);
+        const bundleSearchActive = String(bundleCatalogSearch || '').trim().length > 0;
         const handleBundlePageChange = (page) => {
             if (page < 1 || page > totalBundlePages) return;
             setBundleGridPage(page);
@@ -2476,6 +2542,7 @@ const BNPLFlow = () => {
                 <button 
                     onClick={() => {
                         bundlesFetchedForLoadRef.current = false;
+                        setBundleCatalogSearch('');
                         if (searchParams.get('fromCalculator') === 'true' || searchParams.get('q')) {
                             const q = searchParams.get('q') || '';
                             const qParam = q ? `&q=${encodeURIComponent(q)}` : '';
@@ -2502,7 +2569,7 @@ const BNPLFlow = () => {
                     })()}
                 </p>
                 {searchParams.get('q') && (
-                    <p className="text-center mb-8">
+                    <p className="text-center mb-4">
                         <a
                             href={`/tools?inverter=true&returnTo=bnpl&source=flow&category=${encodeURIComponent(formData.productCategory || 'full-kit')}&q=${encodeURIComponent(searchParams.get('q') || '')}`}
                             className="text-[#273e8e] underline font-bold text-base"
@@ -2511,13 +2578,28 @@ const BNPLFlow = () => {
                         </a>
                     </p>
                 )}
-                {!searchParams.get('q') && <div className="mb-8" />}
                 {!bundlesLoading && bnplMinimumLoanAmount > 0 && (
-                    <p className="text-center text-sm text-gray-500 mb-5">
+                    <p className="text-center text-sm text-gray-500 mb-4">
                         BNPL eligible bundles only: minimum amount is ₦{bnplMinimumLoanAmount.toLocaleString()}.
                     </p>
                 )}
-
+                {!bundlesLoading && filteredBundles.length > 0 && (
+                    <div className="max-w-md mx-auto mb-8 relative">
+                        <Search
+                            size={16}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                            aria-hidden="true"
+                        />
+                        <input
+                            type="search"
+                            value={bundleCatalogSearch}
+                            onChange={(e) => setBundleCatalogSearch(e.target.value)}
+                            placeholder={`Search ${isInverterFlow ? 'solutions' : 'bundles'} by name…`}
+                            className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#273e8e]/40 focus:border-[#273e8e]"
+                            aria-label={`Search ${isInverterFlow ? 'solutions' : 'bundles'}`}
+                        />
+                    </div>
+                )}
                 {bundlesLoading ? (
                     <div className="text-center py-16">
                         <div className="flex flex-col items-center justify-center">
@@ -2564,6 +2646,23 @@ const BNPLFlow = () => {
                         >
                             Go back
                         </button>
+                    </div>
+                ) : searchFilteredBundles.length === 0 ? (
+                    <div className="text-center py-12 bg-white rounded-2xl border border-gray-200 max-w-6xl mx-auto">
+                        <p className="text-gray-600 mb-4">
+                            {bundleSearchActive
+                                ? `No ${isInverterFlow ? 'solutions' : 'bundles'} match “${bundleCatalogSearch.trim()}”.`
+                                : `No ${isInverterFlow ? 'solutions' : 'bundles'} available.`}
+                        </p>
+                        {bundleSearchActive && (
+                            <button
+                                type="button"
+                                onClick={() => setBundleCatalogSearch('')}
+                                className="text-[#273e8e] hover:underline font-semibold text-sm"
+                            >
+                                Clear search
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <>
@@ -2747,9 +2846,10 @@ const BNPLFlow = () => {
                             </button>
                         </div>
                     )}
-                    {!bundlesLoading && filteredBundles.length > 0 && (
+                    {!bundlesLoading && searchFilteredBundles.length > 0 && (
                         <p className="text-center text-sm text-gray-500 mt-4">
-                            Showing {bundleGridStart + 1} - {Math.min(bundleGridStart + BUNDLE_STEP_GRID_PAGE_SIZE, filteredBundles.length)} of {filteredBundles.length} {isInverterFlow ? 'solutions' : 'bundles'}
+                            Showing {bundleGridStart + 1} - {Math.min(bundleGridStart + BUNDLE_STEP_GRID_PAGE_SIZE, searchFilteredBundles.length)} of {searchFilteredBundles.length} {isInverterFlow ? 'solutions' : 'bundles'}
+                            {bundleSearchActive ? ' matching your search' : ''}
                         </p>
                     )}
                     

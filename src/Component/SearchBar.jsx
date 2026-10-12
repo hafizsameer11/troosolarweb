@@ -154,28 +154,29 @@ const SearchBar = ({
       const qLower = query.trim().toLowerCase();
       const qNormalized = normalizeSearchText(qLower);
 
-      // Capacity search (4kv, 1.5, 1.5kva, etc.)
-      if (sizeToFilterNorm !== null) {
-        results = results.filter((item) => {
-          const matchesSize = catalogItemMatchesKva(item, sizeToFilterNorm);
-          const matchesQueryText =
-            qNormalized.length > 0 &&
-            normalizeSearchText(getItemSearchText(item)).includes(qNormalized);
-          return matchesSize || matchesQueryText;
-        });
+      // True only for capacity-only queries like "1.8", "4kva", "3.6 kw".
+      // Product names such as "LitePower1838 (1.8kW+3.8kWh)" must NOT match every 1.8kVA bundle.
+      const isCapacityOnlyQuery = (() => {
+        if (sizeToFilterNorm == null || !qLower) return false;
+        const leftover = qLower
+          .replace(/\d+(?:\.\d+)?\s*kv(?:a)?/gi, " ")
+          .replace(/\d+(?:\.\d+)?\s*kw\b/gi, " ")
+          .replace(/\bkwh\b/gi, " ")
+          .replace(/[()+/,\-_&]/g, " ")
+          .replace(/\b\d+(?:\.\d+)?\b/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        return leftover.length === 0;
+      })();
+
+      if (sizeToFilterNorm !== null && isCapacityOnlyQuery) {
+        results = results.filter((item) =>
+          catalogItemMatchesKva(item, sizeToFilterNorm)
+        );
       } else if (qLower) {
-        results = results.filter((item) => {
-          if (normalizeSearchText(getItemSearchText(item)).includes(qNormalized)) {
-            return true;
-          }
-
-          const queryNum = parseKvaFromSearchQuery(qLower);
-          if (queryNum != null) {
-            return catalogItemMatchesKva(item, queryNum);
-          }
-
-          return false;
-        });
+        results = results.filter((item) =>
+          normalizeSearchText(getItemSearchText(item)).includes(qNormalized)
+        );
       }
       
       const categoryLabel =

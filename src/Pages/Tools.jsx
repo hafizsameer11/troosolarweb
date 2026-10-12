@@ -18,7 +18,7 @@ const toolsData = [
   },
   {
     id: "solarSaving",
-    label: "Cost Savings Calculator",
+    label: "Solar Savings Calculator",
     icon: assets.solarInverted,
     component: <SolarSavingCalculator />,
   },

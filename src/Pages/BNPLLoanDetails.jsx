@@ -168,7 +168,14 @@ const BNPLLoanDetails = () => {
                             });
                             
                             if (scheduleResponse.data.status === 'success' && scheduleResponse.data.data) {
-                                orderDetails.repayment_schedule = scheduleResponse.data.data.installments || scheduleResponse.data.data || scheduleResponse.data.data.schedule;
+                                const d = scheduleResponse.data.data;
+                                orderDetails.repayment_schedule = Array.isArray(d.installments)
+                                    ? d.installments
+                                    : Array.isArray(d.schedule)
+                                      ? d.schedule
+                                      : Array.isArray(d)
+                                        ? d
+                                        : [];
                             }
                         } catch (scheduleErr) {
                             console.log('Could not fetch repayment schedule:', scheduleErr);
@@ -266,6 +273,14 @@ const BNPLLoanDetails = () => {
                     financing_path: orderDetails.financing_path || la?.financing_path || null,
                     admin_notes: orderDetails.admin_notes || la?.admin_notes || null,
                     partner_offer: partnerOfferFromLa,
+                    // Keep counter offer visible after down payment (status often becomes approved).
+                    had_counter_offer: !!(orderDetails.had_counter_offer || la?.had_counter_offer),
+                    counter_offer_min_deposit:
+                        orderDetails.counter_offer_min_deposit ?? la?.counter_offer_min_deposit ?? null,
+                    counter_offer_min_tenor:
+                        orderDetails.counter_offer_min_tenor ?? la?.counter_offer_min_tenor ?? null,
+                    counter_offer_details:
+                        orderDetails.counter_offer_details || la?.counter_offer_details || null,
                     isApplication: false // This is an order, not an application
                 };
                 
@@ -404,6 +419,7 @@ const BNPLLoanDetails = () => {
                     order_number: appData.order_number,
                     down_payment_completed: appData.down_payment_completed,
                     // Counter offer details - can be at root level or nested
+                    had_counter_offer: !!appData.had_counter_offer,
                     counter_offer_min_deposit: appData.counter_offer_min_deposit,
                     counter_offer_min_tenor: appData.counter_offer_min_tenor,
                     counter_offer_details: appData.counter_offer_details,
@@ -536,12 +552,35 @@ const BNPLLoanDetails = () => {
         }
     };
 
+    const isLoanFullyPaid = (order) => {
+        if (!order) return false;
+        if (order.loan_fully_paid === true) return true;
+        const status = String(order.order_status || order.status || '').toLowerCase();
+        if (status === 'payment_complete' || status === 'completed') return true;
+        const rs = order.repayment_summary || order.loan_summary;
+        if (rs) {
+            const total = Number(rs.total_installments ?? 0);
+            const pending = Number(rs.pending_installments ?? 0);
+            const paid = Number(rs.paid_installments ?? 0);
+            if (rs.loan_fully_paid === true) return true;
+            if (total > 0 && pending === 0 && paid >= total) return true;
+        }
+        const schedule = order.repayment_schedule || [];
+        if (schedule.length > 0) {
+            return schedule.every((i) =>
+                String(i.status || i.computed_status || '').toLowerCase() === 'paid'
+            );
+        }
+        return false;
+    };
+
     const getStatusIcon = (status) => {
         switch (status?.toLowerCase()) {
             case 'approved':
             case 'active':
             case 'completed':
             case 'paid':
+            case 'payment_complete':
             case 'counter_offer_accepted':
                 return <CheckCircle size={24} className="text-green-600" />;
             case 'rejected':
@@ -566,6 +605,7 @@ const BNPLLoanDetails = () => {
             active: 'bg-green-100 text-green-800 border-green-300',
             completed: 'bg-green-100 text-green-800 border-green-300',
             paid: 'bg-green-100 text-green-800 border-green-300',
+            payment_complete: 'bg-emerald-100 text-emerald-800 border-emerald-300',
             rejected: 'bg-red-100 text-red-800 border-red-300',
             cancelled: 'bg-red-100 text-red-800 border-red-300',
             pending: 'bg-blue-100 text-blue-800 border-blue-300',
@@ -715,7 +755,9 @@ const BNPLLoanDetails = () => {
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
         try {
-            return new Date(dateString).toLocaleDateString('en-NG', {
+            const d = new Date(dateString);
+            if (Number.isNaN(d.getTime())) return 'N/A';
+            return d.toLocaleDateString('en-NG', {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -723,9 +765,24 @@ const BNPLLoanDetails = () => {
                 minute: '2-digit'
             });
         } catch {
-            return dateString;
+            return 'N/A';
         }
     };
+
+    /** Backend due date field is payment_date; when the customer actually paid is paid_at. */
+    const getInstallmentDueDate = (inst) =>
+        inst?.due_date || inst?.payment_date || inst?.dueDate || inst?.paymentDate || null;
+    const getInstallmentPaidAt = (inst) =>
+        inst?.paid_at ||
+        inst?.paidAt ||
+        inst?.transaction?.transacted_at ||
+        inst?.transaction?.created_at ||
+        null;
+    const getInstallmentNumber = (inst, index = 0) =>
+        inst?.installment_number ??
+        inst?.sequence ??
+        inst?.display_number ??
+        (Number.isFinite(Number(index)) ? Number(index) + 1 : null);
 
     const formatCurrency = (amount) => {
         if (!amount) return '₦0.00';
@@ -780,10 +837,16 @@ const BNPLLoanDetails = () => {
                                 po.initial_deposit != null ||
                                 po.repayment_amount != null)
                         );
-                        const itemStatus =
-                            String(item.status || '').toLowerCase() === 'partner_offer' || hasPartnerOfferTerms
-                                ? 'partner_offer'
-                                : item.status;
+                        const itemStatus = (() => {
+                            if (
+                                String(item.status || '').toLowerCase() === 'partner_offer' ||
+                                hasPartnerOfferTerms
+                            ) {
+                                return 'partner_offer';
+                            }
+                            if (isLoanFullyPaid(item)) return 'payment_complete';
+                            return item.status || item.order_status;
+                        })();
                         const loanAmount = item.loan_amount || item.loan_summary?.loan_amount;
                         const repaymentDuration = item.repayment_duration || item.loan_summary?.repayment_duration || item.loan_summary?.duration;
                         const displayId = isApplication ? `Application #${itemId}` : `Order #${itemId}`;
@@ -951,6 +1014,11 @@ const BNPLLoanDetails = () => {
                 order.partner_offer.repayment_amount != null)
         );
 
+        // Fully repaid BNPL orders should show Payment Complete (not APPROVED).
+        if (!isApplication && isLoanFullyPaid(order)) {
+            return 'payment_complete';
+        }
+
         // For orders with loan applications, prioritize loan application status
         if (!isApplication && loanApp) {
             // If loan is approved and down payment is completed, show as approved/active
@@ -968,6 +1036,9 @@ const BNPLLoanDetails = () => {
         // but must not override approved/rejected after down payment).
         if (isApplication) {
             const appStatus = String(order.status || loanApp?.status || '').toLowerCase();
+            if (appStatus === 'payment_complete' || isLoanFullyPaid(order)) {
+                return 'payment_complete';
+            }
             if (appStatus === 'partner_offer') {
                 return 'partner_offer';
             }
@@ -992,6 +1063,11 @@ const BNPLLoanDetails = () => {
         }
 
         return orderStatus || order.status || 'pending';
+    };
+
+    const isApprovedOrPaidComplete = (status) => {
+        const s = String(status || '').toLowerCase();
+        return s === 'approved' || s === 'payment_complete';
     };
 
     const renderOrderDetails = () => {
@@ -1021,10 +1097,39 @@ const BNPLLoanDetails = () => {
             laPartner.partner_offer_repayment_amount != null
         );
         const showPartnerOfferSection = isPartnerOfferStatus || hasPartnerOfferTerms;
-        // Installments / overdue belong only to orders after down payment — never to offer/pending apps.
+        const partnerFinancingPath = String(
+            order?.financing_path
+                || loanApp?.financing_path
+                || order?.loan_plan_snapshot?.financing?.path
+                || loanApp?.loan_plan_snapshot?.financing?.path
+                || ''
+        ).toLowerCase();
+        // Partner financing: Troosolar flow ends after down payment; monthly debits are with the partner.
+        const isPartnerFinancingPath =
+            showPartnerOfferSection
+            || partnerFinancingPath === 'partner'
+            || String(order?.credit_check_method || loanApp?.credit_check_method || '').toLowerCase() === 'partner';
+        const partnerDownPaymentDone = isPartnerFinancingPath && !!(
+            order.down_payment_completed
+            || order.order_id
+            || String(order.payment_status || '').toLowerCase() === 'paid'
+        );
+        const hasCounterOfferTerms = !!(
+            order.had_counter_offer ||
+            (order.counter_offer_min_deposit != null && order.counter_offer_min_deposit !== '' &&
+                order.counter_offer_min_tenor != null && order.counter_offer_min_tenor !== '') ||
+            (loanApp?.counter_offer_min_deposit != null && loanApp?.counter_offer_min_tenor != null) ||
+            order.counter_offer_details ||
+            loanApp?.counter_offer_details
+        );
+        const isCounterOfferPending = statusLower === 'counter_offer';
+        // After accept / approval / down payment: keep original choice + counter offer breakdown.
+        const showCounterOfferHistorySection =
+            hasCounterOfferTerms && !isCounterOfferPending && !showPartnerOfferSection;
+        // Installments / overdue: Troosolar path only after down payment — never partner financing.
         const showRepaymentUi =
-            !isApplication ||
-            !!(order.down_payment_completed || order.order_id);
+            !isPartnerFinancingPath &&
+            (!isApplication || !!(order.down_payment_completed || order.order_id));
 
         const toNum = (v) => {
             const n = Number(String(v ?? '').replace(/[^\d.-]/g, ''));
@@ -1152,46 +1257,127 @@ const BNPLLoanDetails = () => {
                                     </p>
                                 </div>
                             )}
-                            <div className="space-y-3">
-                                {/* Get counter offer from root level fields or counter_offer_details */}
+                            <div className="space-y-3 text-sm">
+                                {/* Same wording/order as BNPL "Review Your Loan Plan" / Loan Summary */}
                                 {(() => {
-                                    const minDeposit = order.counter_offer_min_deposit || order.counter_offer_details?.down_payment;
-                                    const minTenor = order.counter_offer_min_tenor || order.counter_offer_details?.repayment_duration;
-                                    const monthlyPayment = order.counter_offer_details?.monthly_payment;
-                                    const totalAmount = order.counter_offer_details?.total_amount;
-                                    
+                                    const d = order.counter_offer_details || {};
+                                    const toNum = (v) => {
+                                        if (v === null || v === undefined || v === '') return null;
+                                        const n = parseAmount(v);
+                                        return Number.isFinite(n) ? n : null;
+                                    };
+                                    const pick = (...vals) => {
+                                        for (const v of vals) {
+                                            const n = toNum(v);
+                                            if (n !== null && n !== 0) return n;
+                                            if (n === 0) return 0;
+                                        }
+                                        return null;
+                                    };
+                                    const depositPct = pick(d.deposit_percent, d.depositPercent);
+                                    const upfront = pick(
+                                        d.upfront_deposit_total,
+                                        d.down_payment,
+                                        order.counter_offer_min_deposit
+                                    );
+                                    const totalLoan = pick(d.total_loan_amount, d.loan_amount);
+                                    const interestRate = pick(d.interest_rate, d.interestRate);
+                                    const totalInterest = pick(d.total_interest_amount);
+                                    const totalRepayment = pick(
+                                        d.total_repayment_amount,
+                                        d.total_amount
+                                    );
+                                    const monthly = pick(
+                                        d.monthly_repayment_amount,
+                                        d.monthly_payment
+                                    );
+                                    const tenor = pick(
+                                        d.repayment_duration,
+                                        order.counter_offer_min_tenor
+                                    );
+                                    const insuranceFee = pick(d.insurance_fee);
+                                    const managementFee = pick(d.management_fee);
+                                    const legalFee = pick(d.legal_fee);
+                                    const adminFees = pick(d.admin_fees_total);
+                                    const insurancePct = pick(d.insurance_pct) ?? 1;
+                                    const managementPct = pick(d.management_pct) ?? 1;
+                                    const legalPct = pick(d.legal_pct) ?? 1;
+                                    const depositLabel = depositPct
+                                        ? `Initial Deposit (${depositPct}%) + Total Administrative Fees`
+                                        : 'Initial Deposit + Total Administrative Fees';
+                                    const interestLabel = interestRate != null && tenor
+                                        ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
+                                        : 'Total Interest Amount';
+                                    const row = (label, value, opts = {}) => {
+                                        if (value === null || value === undefined) return null;
+                                        return (
+                                            <div
+                                                key={label}
+                                                className={`flex justify-between items-center gap-3 ${opts.border ? 'border-t border-yellow-200 pt-2 mt-1' : ''}`}
+                                            >
+                                                <span className={`text-gray-700 ${opts.boldLabel ? 'font-semibold' : ''}`}>
+                                                    {opts.num != null ? `${opts.num}. ` : ''}{label}
+                                                </span>
+                                                <span className={`font-bold tabular-nums ${opts.accent || 'text-gray-800'}`}>
+                                                    {opts.suffix || formatCurrency(value)}
+                                                </span>
+                                            </div>
+                                        );
+                                    };
                                     return (
                                         <>
-                                            {minDeposit && (
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-gray-600">Minimum Deposit:</span>
-                                                    <span className="font-bold text-lg text-gray-800">
-                                                        {formatCurrency(minDeposit)}
+                                            {row(depositLabel, upfront, { num: 1, boldLabel: true })}
+                                            {row('Total Loan Amount', totalLoan, { num: 2 })}
+                                            {interestRate != null && (
+                                                <div className="flex justify-between items-center gap-3">
+                                                    <span className="text-gray-700">3. Interest Rate (monthly)</span>
+                                                    <span className="font-bold text-[#273e8e] tabular-nums">
+                                                        {Number(interestRate).toFixed(2)}%
                                                     </span>
                                                 </div>
                                             )}
-                                            {minTenor && (
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-gray-600">Minimum Tenor:</span>
-                                                    <span className="font-bold text-lg text-gray-800">
-                                                        {minTenor} months
+                                            {row(interestLabel, totalInterest, { num: 4 })}
+                                            {row('Total Repayment Amount', totalRepayment, { num: 5 })}
+                                            {row('Monthly Repayment Amount', monthly, {
+                                                num: 6,
+                                                boldLabel: true,
+                                                accent: 'text-[#273e8e]',
+                                            })}
+                                            {tenor != null && (
+                                                <div className="flex justify-between items-center gap-3 border-t border-yellow-200 pt-2 mt-1">
+                                                    <span className="text-gray-700">7. Loan Tenor</span>
+                                                    <span className="font-bold text-[#273e8e] tabular-nums">
+                                                        {tenor} {tenor === 1 ? 'month' : 'months'}
                                                     </span>
                                                 </div>
                                             )}
-                                            {monthlyPayment && (
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-gray-600">Monthly Payment:</span>
-                                                    <span className="font-bold text-lg text-[#273e8e]">
-                                                        {formatCurrency(monthlyPayment)}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            {totalAmount && (
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-gray-600">Total Repayment Amount:</span>
-                                                    <span className="font-bold text-lg text-gray-800">
-                                                        {formatCurrency(totalAmount)}
-                                                    </span>
+                                            {(insuranceFee != null || managementFee != null || legalFee != null) && (
+                                                <div className="mt-4 pt-3 border-t border-yellow-200">
+                                                    <p className="font-semibold text-gray-800 mb-1">Administrative Fees</p>
+                                                    <p className="text-xs text-gray-600 mb-2">
+                                                        Insurance is calculated on the bundle price only. Management and legal fees are calculated on the loan amount.
+                                                    </p>
+                                                    <div className="space-y-1">
+                                                        {row(
+                                                            `Insurance Fee (${insurancePct}% of bundle price)`,
+                                                            insuranceFee,
+                                                            { num: 1 }
+                                                        )}
+                                                        {row(
+                                                            `Management Fee (${managementPct}% of the loan amount)`,
+                                                            managementFee,
+                                                            { num: 2 }
+                                                        )}
+                                                        {row(
+                                                            `Legal Fee (${legalPct}% of the loan amount)`,
+                                                            legalFee,
+                                                            { num: 3 }
+                                                        )}
+                                                        {row('Total Administrative Fees', adminFees, {
+                                                            boldLabel: true,
+                                                            border: true,
+                                                        })}
+                                                    </div>
                                                 </div>
                                             )}
                                         </>
@@ -1217,17 +1403,23 @@ const BNPLLoanDetails = () => {
                                             return;
                                         }
 
-                                        // Get counter offer details from root level fields or counter_offer_details
-                                        const minimumDeposit = order.counter_offer_min_deposit || order.counter_offer_details?.down_payment
-                                            ? parseAmount(order.counter_offer_min_deposit || order.counter_offer_details.down_payment)
-                                            : loanCalc?.down_payment 
-                                                ? parseAmount(loanCalc.down_payment)
-                                                : 0;
-                                        
-                                        const minimumTenor = order.counter_offer_min_tenor || order.counter_offer_details?.repayment_duration
-                                            || loanCalc?.repayment_duration 
-                                            || loanCalc?.tenor 
-                                            || 12;
+                                        // Prefer corrected plan from counter_offer_details (insurance on bundle price)
+                                        const d = order.counter_offer_details || {};
+                                        const minimumDeposit = parseAmount(
+                                            d.upfront_deposit_total
+                                            || d.down_payment
+                                            || order.counter_offer_min_deposit
+                                            || loanCalc?.down_payment
+                                            || 0
+                                        );
+                                        const minimumTenor = parseInt(
+                                            d.repayment_duration
+                                            || order.counter_offer_min_tenor
+                                            || loanCalc?.repayment_duration
+                                            || loanCalc?.tenor
+                                            || 12,
+                                            10
+                                        );
 
                                         const response = await axios.post(
                                             API.BNPL_COUNTEROFFER_ACCEPT,
@@ -1280,6 +1472,238 @@ const BNPLLoanDetails = () => {
                         </div>
                     </div>
                 )}
+
+                {/* Counter offer history — original choice + counter offer (after accept / approval / down payment) */}
+                {showCounterOfferHistorySection && (() => {
+                    const d = order.counter_offer_details || loanApp?.counter_offer_details || {};
+                    const pickCo = (...vals) => {
+                        for (const v of vals) {
+                            if (v === null || v === undefined || v === '') continue;
+                            const n = parseAmount(v);
+                            if (Number.isFinite(n)) return n;
+                        }
+                        return null;
+                    };
+                    const depositPct = pickCo(d.deposit_percent, d.depositPercent);
+                    const upfront = pickCo(
+                        d.upfront_deposit_total,
+                        d.down_payment,
+                        order.counter_offer_min_deposit,
+                        loanApp?.counter_offer_min_deposit
+                    );
+                    const totalLoan = pickCo(d.total_loan_amount, d.loan_amount);
+                    const interestRate = pickCo(d.interest_rate, d.interestRate);
+                    const totalInterest = pickCo(d.total_interest_amount);
+                    const totalRepayment = pickCo(d.total_repayment_amount, d.total_amount);
+                    const monthly = pickCo(d.monthly_repayment_amount, d.monthly_payment);
+                    const tenor = pickCo(
+                        d.repayment_duration,
+                        order.counter_offer_min_tenor,
+                        loanApp?.counter_offer_min_tenor
+                    );
+                    const insuranceFee = pickCo(d.insurance_fee);
+                    const managementFee = pickCo(d.management_fee);
+                    const legalFee = pickCo(d.legal_fee);
+                    const adminFees = pickCo(d.admin_fees_total);
+                    const insurancePct = pickCo(d.insurance_pct) ?? 1;
+                    const managementPct = pickCo(d.management_pct) ?? 1;
+                    const legalPct = pickCo(d.legal_pct) ?? 1;
+                    const depositLabel = depositPct
+                        ? `Initial Deposit (${depositPct}%) + Total Administrative Fees`
+                        : 'Initial Deposit + Total Administrative Fees';
+                    const interestLabel = interestRate != null && tenor
+                        ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
+                        : 'Total Interest Amount';
+
+                    const pickOrig = (...vals) => {
+                        for (const v of vals) {
+                            if (v === null || v === undefined || v === '') continue;
+                            const n = parseAmount(v);
+                            if (Number.isFinite(n)) return n;
+                        }
+                        return 0;
+                    };
+                    const origTenor = pickOrig(ld?.tenor, ld?.repayment_duration);
+                    const origDepositPctRaw = pickOrig(ld?.depositPercent, ld?.deposit_percent);
+                    const origLoanAmount = pickOrig(ld?.totalLoanAmount, ld?.principal);
+                    const origInterestRate = Number(ld?.interestRate ?? ld?.interest_rate);
+                    const origTotalInterest = pickOrig(ld?.totalInterestAmount, ld?.totalInterest) || (
+                        origLoanAmount > 0 && Number.isFinite(origInterestRate) && origTenor > 0
+                            ? Math.round(origLoanAmount * (origInterestRate / 100) * origTenor * 100) / 100
+                            : 0
+                    );
+                    const origRepayment = pickOrig(ld?.totalRepaymentAmount, ld?.totalRepayment)
+                        || (origLoanAmount + origTotalInterest);
+                    const origMonthly = pickOrig(ld?.monthlyRepaymentAmount, ld?.monthlyRepayment)
+                        || (origTenor > 0 ? Math.round((origRepayment / origTenor) * 100) / 100 : 0);
+                    const origDepositPctLabel = origDepositPctRaw > 0
+                        ? `${Math.abs(origDepositPctRaw - Math.round(origDepositPctRaw)) < 0.05
+                            ? Math.round(origDepositPctRaw)
+                            : Math.round(origDepositPctRaw * 100) / 100}%`
+                        : null;
+                    const originalRows = [
+                        {
+                            label: origDepositPctLabel
+                                ? `Initial Deposit (${origDepositPctLabel}) + Total Administrative Fees`
+                                : 'Initial Deposit + Total Administrative Fees',
+                            value: pickOrig(ld?.depositAmount, ld?.down_payment),
+                        },
+                        { label: 'Total Loan Amount', value: origLoanAmount },
+                        {
+                            label: Number.isFinite(origInterestRate) && origTenor > 0
+                                ? `Total Interest Amount (${origInterestRate}% × ${origTenor} mo)`
+                                : 'Total Interest Amount',
+                            value: origTotalInterest,
+                        },
+                        { label: 'Total Repayment Amount', value: origRepayment },
+                        { label: 'Monthly Repayment Amount', value: origMonthly },
+                    ];
+                    const hasOriginalChoice = originalRows.some((r) => Number(r.value) > 0) || origTenor > 0;
+
+                    const canPayDown =
+                        isApplication &&
+                        (statusLower === 'approved' || statusLower === 'counter_offer_accepted') &&
+                        !order.order_id &&
+                        !order.down_payment_completed &&
+                        upfront > 0;
+
+                    const coRow = (label, value, opts = {}) => {
+                        if (value === null || value === undefined) return null;
+                        return (
+                            <div
+                                key={label}
+                                className={`bg-white rounded-lg p-4 border border-yellow-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 ${opts.border ? 'border-t mt-1 pt-3' : ''}`}
+                            >
+                                <p className={`text-sm text-gray-800 ${opts.bold ? 'font-semibold' : 'font-medium'}`}>
+                                    {opts.num != null ? `${opts.num}. ` : ''}{label}
+                                </p>
+                                <p className={`text-xl font-bold tabular-nums ${opts.accent || 'text-gray-800'}`}>
+                                    {formatCurrency(value)}
+                                </p>
+                            </div>
+                        );
+                    };
+
+                    return (
+                        <div className="space-y-6">
+                            {hasOriginalChoice && (
+                                <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl shadow-sm border border-gray-200 p-6">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <span className="text-[#273e8e] text-2xl font-bold" aria-hidden="true">₦</span>
+                                        <h3 className="text-xl font-semibold text-gray-800">Your Original Choice</h3>
+                                    </div>
+                                    <p className="text-sm text-gray-600 mb-4">
+                                        What you selected when you applied (Loan Summary).
+                                    </p>
+                                    <div className="space-y-3">
+                                        {originalRows.map((row, index) => (
+                                            <div
+                                                key={`co-orig-${row.label}`}
+                                                className="bg-white rounded-lg p-4 border border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                                            >
+                                                <p className="text-sm font-medium text-gray-800">{row.label}</p>
+                                                <p className={`text-xl font-bold ${
+                                                    index === 4 ? 'text-[#273e8e]' : 'text-gray-800'
+                                                }`}>
+                                                    {formatCurrency(row.value)}
+                                                </p>
+                                            </div>
+                                        ))}
+                                        <div className="border-t border-gray-200 pt-3 mt-1">
+                                            <div className="bg-white rounded-lg p-4 border border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                                <p className="text-sm font-medium text-gray-800">Loan Tenor</p>
+                                                <p className="text-xl font-bold text-[#273e8e]">
+                                                    {origTenor > 0
+                                                        ? `${origTenor} ${origTenor === 1 ? 'month' : 'months'}`
+                                                        : '—'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-6">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <AlertCircle size={28} className="text-yellow-600" />
+                                    <h3 className="text-xl font-bold text-yellow-800">Counter Offer</h3>
+                                </div>
+                                <p className="text-sm text-yellow-900 mb-4">
+                                    Terms from Troosolar&apos;s counter offer
+                                    {statusLower === 'counter_offer_accepted' || statusLower === 'approved'
+                                        ? ' (accepted).'
+                                        : '.'}
+                                </p>
+                                {(order.admin_notes || loanApp?.admin_notes) && (
+                                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <p className="text-sm text-gray-700">
+                                            <strong>Admin Note:</strong> {order.admin_notes || loanApp?.admin_notes}
+                                        </p>
+                                    </div>
+                                )}
+                                <div className="space-y-3 text-sm">
+                                    {coRow(depositLabel, upfront, { num: 1, bold: true })}
+                                    {coRow('Total Loan Amount', totalLoan, { num: 2 })}
+                                    {interestRate != null && (
+                                        <div className="bg-white rounded-lg p-4 border border-yellow-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                            <p className="text-sm font-medium text-gray-800">3. Interest Rate (monthly)</p>
+                                            <p className="text-xl font-bold text-[#273e8e] tabular-nums">
+                                                {Number(interestRate).toFixed(2)}%
+                                            </p>
+                                        </div>
+                                    )}
+                                    {coRow(interestLabel, totalInterest, { num: 4 })}
+                                    {coRow('Total Repayment Amount', totalRepayment, { num: 5 })}
+                                    {coRow('Monthly Repayment Amount', monthly, {
+                                        num: 6,
+                                        bold: true,
+                                        accent: 'text-[#273e8e]',
+                                    })}
+                                    {tenor != null && (
+                                        <div className="border-t border-yellow-200 pt-3 mt-1">
+                                            <div className="bg-white rounded-lg p-4 border border-yellow-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                                <p className="text-sm font-medium text-gray-800">7. Loan Tenor</p>
+                                                <p className="text-xl font-bold text-[#273e8e] tabular-nums">
+                                                    {tenor} {tenor === 1 ? 'month' : 'months'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {(insuranceFee != null || managementFee != null || legalFee != null) && (
+                                        <div className="mt-4 pt-3 border-t border-yellow-200">
+                                            <p className="font-semibold text-gray-800 mb-1">Administrative Fees</p>
+                                            <p className="text-xs text-gray-600 mb-2">
+                                                Insurance is calculated on the bundle price only. Management and legal fees are calculated on the loan amount.
+                                            </p>
+                                            <div className="space-y-2">
+                                                {coRow(`Insurance Fee (${insurancePct}% of bundle price)`, insuranceFee, { num: 1 })}
+                                                {coRow(`Management Fee (${managementPct}% of the loan amount)`, managementFee, { num: 2 })}
+                                                {coRow(`Legal Fee (${legalPct}% of the loan amount)`, legalFee, { num: 3 })}
+                                                {coRow('Total Administrative Fees', adminFees, { bold: true })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                {canPayDown && (
+                                    <div className="mt-4 bg-white rounded-lg p-4 border-2 border-[#273e8e]">
+                                        <p className="text-sm text-gray-600 mb-3">
+                                            Pay your initial deposit (counter offer) of{' '}
+                                            <strong>{formatCurrency(upfront)}</strong> to proceed.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => handlePayDownPayment(upfront)}
+                                            disabled={processingDownPayment}
+                                            className="w-full bg-[#273e8e] text-white py-3 rounded-xl font-bold hover:bg-[#1a2b6b] disabled:opacity-50"
+                                        >
+                                            {processingDownPayment ? 'Processing…' : `Pay Down Payment (${formatCurrency(upfront)})`}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Partner Offer — keep original customer choice + show partner terms (even after approval / on order view) */}
                 {showPartnerOfferSection && (() => {
@@ -1536,6 +1960,9 @@ const BNPLLoanDetails = () => {
                                     <p className="text-sm text-gray-600 mb-2">
                                         Pay your down payment to proceed with your order.
                                     </p>
+                                    <p className="text-xs text-gray-500 mb-3">
+                                        After this payment, monthly repayments are handled by the financing partner — not through Troosolar.
+                                    </p>
                                     <button
                                         type="button"
                                         onClick={() => handlePayDownPayment(upfrontDue)}
@@ -1553,9 +1980,14 @@ const BNPLLoanDetails = () => {
                                     </button>
                                 </div>
                             ) : (order.order_id || order.down_payment_completed || !isApplication) ? (
-                                <p className="text-sm text-green-700 mt-4 font-medium">
-                                    Down payment completed for this partner offer.
-                                </p>
+                                <div className="mt-4 rounded-lg p-4 border border-indigo-200 bg-indigo-50">
+                                    <p className="text-sm font-semibold text-indigo-900 mb-1">
+                                        Down payment completed
+                                    </p>
+                                    <p className="text-sm text-indigo-800">
+                                        Your Troosolar payment for this partner offer is complete. Monthly debits and the remaining loan balance are handled by the financing partner — you will not make installment payments through Troosolar.
+                                    </p>
+                                </div>
                             ) : (
                                 <p className="text-sm text-gray-600 mt-4">
                                     Our team will follow up with next steps. You can also contact support if you have questions about this offer.
@@ -1566,19 +1998,31 @@ const BNPLLoanDetails = () => {
                     );
                 })()}
 
-                {/* Down payment completed – show order link when application has an order */}
+                {/* Down payment completed – Troosolar path: order + installments; partner path: end of Troosolar payment flow */}
                 {isApplication && (order.order_id || order.down_payment_completed) && (
-                    <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
+                    <div className={`${isPartnerFinancingPath ? 'bg-indigo-50 border-indigo-200' : 'bg-green-50 border-green-200'} border-2 rounded-xl p-6`}>
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div className="flex items-center gap-3">
-                                <CheckCircle2 className="text-green-600" size={28} />
+                                <CheckCircle2 className={isPartnerFinancingPath ? 'text-indigo-600' : 'text-green-600'} size={28} />
                                 <div>
-                                    <h3 className="text-lg font-semibold text-green-800">Down payment completed</h3>
-                                    <p className="text-sm text-green-700">Your BNPL order has been placed. View your order for repayment schedule and installments.</p>
-                                    {order.order_number && <p className="text-sm text-green-600 mt-1">Order #{order.order_number}</p>}
+                                    <h3 className={`text-lg font-semibold ${isPartnerFinancingPath ? 'text-indigo-900' : 'text-green-800'}`}>
+                                        Down payment completed
+                                    </h3>
+                                    {isPartnerFinancingPath ? (
+                                        <p className="text-sm text-indigo-800">
+                                            This is where the Troosolar payment flow ends. Your monthly repayments will be handled by the financing partner, not through Troosolar. You will not see a Troosolar installment schedule for this loan.
+                                        </p>
+                                    ) : (
+                                        <p className="text-sm text-green-700">Your BNPL order has been placed. View your order for repayment schedule and installments.</p>
+                                    )}
+                                    {order.order_number && (
+                                        <p className={`text-sm mt-1 ${isPartnerFinancingPath ? 'text-indigo-700' : 'text-green-600'}`}>
+                                            Order #{order.order_number}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
-                            {order.order_id && (
+                            {order.order_id && !isPartnerFinancingPath && (
                                 <button
                                     type="button"
                                     onClick={() => navigate(`/bnpl-loans/${order.order_id}`)}
@@ -1591,8 +2035,25 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
-                {/* Forms section – Download + Upload (approved BNPL, application or order view) */}
-                {displayStatus?.toLowerCase() === 'approved' && (isApplication && id?.startsWith('app-') || (!isApplication && loanApp)) && (() => {
+                {/* Partner financing — order view note after down payment */}
+                {!isApplication && partnerDownPaymentDone && (
+                    <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-6">
+                        <div className="flex items-start gap-3">
+                            <CheckCircle2 className="text-indigo-600 flex-shrink-0 mt-0.5" size={28} />
+                            <div>
+                                <h3 className="text-lg font-semibold text-indigo-900 mb-1">
+                                    Partner financing — payment complete with Troosolar
+                                </h3>
+                                <p className="text-sm text-indigo-800">
+                                    You have paid your down payment to Troosolar. Monthly debits and the remaining balance are handled by the financing partner. There is no Troosolar installment schedule or monthly pay flow for this loan.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Forms section – Download + Upload (approved / fully paid BNPL, application or order view) */}
+                {isApprovedOrPaidComplete(displayStatus) && (isApplication && id?.startsWith('app-') || (!isApplication && loanApp)) && (() => {
                     const applicationIdForDownload = isApplication && id?.startsWith('app-') ? id.replace('app-', '') : (loanApp?.id ?? null);
                     const hasGuarantor = loanApp?.guarantor || guarantorIdFromInvite;
                     const refetchAfterAction = () => {
@@ -1769,17 +2230,33 @@ const BNPLLoanDetails = () => {
                 })()}
 
                 {/* Book Installation Date – after down payment, order view only */}
-                {!isApplication && loanApp && displayStatus?.toLowerCase() === 'approved' && (order.payment_status === 'paid' || order.down_payment_completed) && (() => {
+                {!isApplication && loanApp && isApprovedOrPaidComplete(displayStatus) && (order.payment_status === 'paid' || order.down_payment_completed) && (() => {
                     const instDate = loanApp.installation_requested_date;
                     const instStatus = loanApp.installation_booking_status;
                     const rejectedDates = loanApp.installation_rejected_dates || [];
-                    const minDate = (() => {
-                        const d = new Date();
-                        d.setDate(d.getDate() + 3); // 72h = 3 days
-                        return d.toISOString().slice(0, 10);
-                    })();
-                    const isSunday = (dateStr) => new Date(dateStr).getDay() === 0;
-                    const refetch = () => id ? fetchOrderDetails(id) : null;
+                    const suggestedDate = loanApp.installation_admin_proposed_date;
+                    const rejectionNote = loanApp.installation_rejection_note;
+                    const acceptSuggestedDate = async () => {
+                        if (!suggestedDate || !order?.id) return;
+                        setProcessingBookInstallation(true);
+                        try {
+                            const token = localStorage.getItem('access_token');
+                            const res = await axios.post(API.BNPL_INSTALLATION_BOOK, {
+                                order_id: order.id,
+                                requested_date: suggestedDate,
+                            }, { headers: { Authorization: `Bearer ${token}` } });
+                            if (res.data?.status === 'success') {
+                                if (id) fetchOrderDetails(id);
+                                alert(res.data?.message || 'Installation date confirmed.');
+                            } else {
+                                alert(res.data?.message || 'Failed to accept suggested date.');
+                            }
+                        } catch (err) {
+                            alert(err.response?.data?.message || 'Failed to accept suggested date.');
+                        } finally {
+                            setProcessingBookInstallation(false);
+                        }
+                    };
                     return (
                         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                             <div className="flex items-center gap-3 mb-3">
@@ -1799,16 +2276,35 @@ const BNPLLoanDetails = () => {
                             {(!instDate || instStatus === 'rejected') && (
                                 <div className="mb-4">
                                     {instStatus === 'rejected' && (
-                                        <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-4">
+                                        <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-4 space-y-2">
                                             <p className="text-red-800">Your requested date could not be confirmed. Please choose another date below (Sundays and previously rejected dates are not available).</p>
+                                            {suggestedDate && (
+                                                <p className="text-red-900 font-medium">Suggested date from Troosolar: {suggestedDate}</p>
+                                            )}
+                                            {rejectionNote && (
+                                                <p className="text-red-800 text-sm"><strong>Note:</strong> {rejectionNote}</p>
+                                            )}
+                                            {suggestedDate && (
+                                                <button
+                                                    type="button"
+                                                    disabled={processingBookInstallation}
+                                                    onClick={acceptSuggestedDate}
+                                                    className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] disabled:opacity-50"
+                                                >
+                                                    {processingBookInstallation ? 'Confirming…' : `Accept suggested date (${suggestedDate})`}
+                                                </button>
+                                            )}
                                         </div>
                                     )}
-                                    {!instDate && (
+                                    {!instDate && instStatus !== 'rejected' && (
                                         <p className="text-sm text-gray-500 mb-4">Choose a date at least 72 hours from today. Sundays are not available.</p>
                                     )}
                                     <button
                                         type="button"
-                                        onClick={() => { setShowBookInstallationModal(true); setBookingInstallationDate(''); }}
+                                        onClick={() => {
+                                            setShowBookInstallationModal(true);
+                                            setBookingInstallationDate(suggestedDate || '');
+                                        }}
                                         className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] disabled:opacity-50 transition-colors"
                                     >
                                         <Calendar size={20} />
@@ -1875,8 +2371,8 @@ const BNPLLoanDetails = () => {
                     );
                 })()}
 
-                {/* Repayment Summary — only show for approved loans */}
-                {displayStatus?.toLowerCase() === 'approved' && repaymentSummary && Object.keys(repaymentSummary).length > 0 && (
+                {/* Repayment Summary — Troosolar path only (partner financing ends after down payment) */}
+                {!isPartnerFinancingPath && isApprovedOrPaidComplete(displayStatus) && repaymentSummary && Object.keys(repaymentSummary).length > 0 && (
                     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-6">
                         <div className="flex items-center gap-3 mb-4">
                             <TrendingUp className="text-[#273e8e]" size={24} />
@@ -1912,8 +2408,8 @@ const BNPLLoanDetails = () => {
                 )}
 
                 {/* Loan Calculation / Repayment Breakdown — mirror BNPL flow summary */}
-                {/* Hidden when Partner Offer section already shows Your Original Choice (avoids duplicate). */}
-                {(loanCalc || ld) && !showPartnerOfferSection && (() => {
+                {/* Hidden when Partner/Counter sections already show Original Choice (avoids duplicate). */}
+                {(loanCalc || ld) && !showPartnerOfferSection && !showCounterOfferHistorySection && (() => {
                     const toNum = (v) => {
                         if (v === null || v === undefined || v === '') return null;
                         const n = parseAmount(v);
@@ -1932,23 +2428,12 @@ const BNPLLoanDetails = () => {
                         return Number.isFinite(n) ? n : null;
                     };
 
-                    // Prefer snapshot / loan_details from apply flow, then GET /bnpl/status loan_calculation.
+                    // Prefer snapshot / loan_details from apply flow (original customer choice).
+                    // Counter-offer terms are shown in the Counter Offer section, not merged here.
                     const statusLower = String(displayStatus || '').toLowerCase();
-                    const isCounterOfferAccepted = statusLower === 'counter_offer_accepted';
-                    const acceptedMinDeposit = pickNum(
-                        order?.counter_offer_min_deposit,
-                        order?.counter_offer_details?.down_payment
-                    );
-                    const acceptedMinTenor = pickNum(
-                        order?.counter_offer_min_tenor,
-                        order?.counter_offer_details?.repayment_duration
-                    );
                     const insurancePct = pickNum(ld?.insurancePct, ld?.insurance_fee_percentage, ld?.feePercentages?.insurance) || 3;
                     const managementPct = pickNum(ld?.managementPct, ld?.management_fee_percentage, ld?.feePercentages?.management) || 1;
                     const legalPct = pickNum(ld?.legalPct, ld?.legal_fee_percentage, ld?.feePercentages?.legal) || 1;
-                    const iPct = insurancePct / 100;
-                    const mPct = managementPct / 100;
-                    const lPct = legalPct / 100;
                     const totalAmount = pickNum(
                         ld?.totalAmount,
                         ld?.total_amount,
@@ -1958,13 +2443,11 @@ const BNPLLoanDetails = () => {
                         ld?.adminFeesTotal,
                         (pickNum(ld?.insuranceFee, 0) + pickNum(ld?.managementFee, 0) + pickNum(ld?.legalFee, 0))
                     );
-                    const initialDepositWithFees = isCounterOfferAccepted && acceptedMinDeposit > 0
-                        ? acceptedMinDeposit
-                        : pickNum(
-                            ld?.depositAmount,
-                            ld?.down_payment,
-                            loanCalc?.down_payment
-                        );
+                    const initialDepositWithFees = pickNum(
+                        ld?.depositAmount,
+                        ld?.down_payment,
+                        loanCalc?.down_payment
+                    );
                     // Bundle price (before admin fees) — used to derive deposit % when not stored
                     const baseDepositFromSnap = pickNum(ld?.baseDepositAmount);
                     const bundlePriceApprox =
@@ -2029,8 +2512,7 @@ const BNPLLoanDetails = () => {
                         DEFAULT_BNPL_INTEREST_RATE_PERCENT;
                     // Prefer application / snapshot tenor — mono row can be wrong (e.g. default 12)
                     const tenor = Number(
-                        (isCounterOfferAccepted && acceptedMinTenor > 0 ? acceptedMinTenor : null) ??
-                            ld?.tenor ??
+                        ld?.tenor ??
                             ld?.repayment_duration ??
                             loanApp?.repayment_duration ??
                             loanCalc?.repayment_duration ??
@@ -2058,20 +2540,6 @@ const BNPLLoanDetails = () => {
                         loanCalc?.monthly_payment
                     ) || (tenor > 0 ? totalRepaymentAmount / tenor : 0);
 
-                    if (isCounterOfferAccepted && acceptedMinDeposit > 0 && bundlePriceApprox > 0) {
-                        const denom = 1 - mPct - lPct;
-                        const baseDeposit =
-                            denom > 0.0001
-                                ? Math.max((acceptedMinDeposit - bundlePriceApprox * (iPct + mPct + lPct)) / denom, 0)
-                                : 0;
-                        const baseLoanAmount = Math.max(bundlePriceApprox - baseDeposit, 0);
-                        totalLoanAmount = baseLoanAmount;
-                        totalInterestAmount = (interestRatePercent / 100) * baseLoanAmount * tenor;
-                        totalRepaymentAmount = baseLoanAmount + totalInterestAmount;
-                        monthlyRepaymentAmount = tenor > 0 ? totalRepaymentAmount / tenor : 0;
-                        depositPercentForLabel =
-                            bundlePriceApprox > 0 ? Math.round((baseDeposit / bundlePriceApprox) * 100) : depositPercentForLabel;
-                    }
                     const depositLabelPct =
                         depositPercentForLabel > 0 ? `${depositPercentForLabel}%` : null;
 
@@ -2133,17 +2601,33 @@ const BNPLLoanDetails = () => {
                             { label: 'Total Repayment Amount', value: totalRepaymentAmount },
                             { label: 'Monthly Repayment Amount', value: monthlyRepaymentAmount },
                         ];
+                    const loanSummaryTitle = isCounterOfferPending
+                        ? 'Your Original Choice'
+                        : isPartnerFinancing
+                            ? 'Financing Summary'
+                            : 'Loan Summary';
                     return (
-                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl shadow-sm border border-green-200 p-6">
-                        <div className="flex items-center gap-3 mb-4">
+                    <div className={`rounded-xl shadow-sm border p-6 ${
+                        isCounterOfferPending
+                            ? 'bg-gradient-to-r from-slate-50 to-gray-50 border-gray-200'
+                            : 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+                    }`}>
+                        <div className="flex items-center gap-3 mb-2">
                             <span className="text-[#273e8e] text-2xl font-bold" aria-hidden="true">₦</span>
                             <h3 className="text-xl font-semibold text-gray-800">
-                                {isPartnerFinancing ? 'Financing Summary' : 'Loan Summary'}
+                                {loanSummaryTitle}
                             </h3>
                         </div>
+                        {isCounterOfferPending && (
+                            <p className="text-sm text-gray-600 mb-4">
+                                What you selected when you applied (Loan Summary).
+                            </p>
+                        )}
                         <div className="space-y-3">
                             {summaryRows.map((row, index) => (
-                                <div key={row.label} className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                <div key={row.label} className={`bg-white rounded-lg p-4 border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 ${
+                                    isCounterOfferPending ? 'border-gray-100' : 'border-green-100'
+                                }`}>
                                     <p className="text-sm font-medium text-gray-800">{row.label}</p>
                                     <p className={`text-xl font-bold ${
                                         row.accent === 'red'
@@ -2156,8 +2640,10 @@ const BNPLLoanDetails = () => {
                                     </p>
                                 </div>
                             ))}
-                            <div className="border-t border-green-200 pt-3 mt-1">
-                                <div className="bg-white rounded-lg p-4 border border-green-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                            <div className={`border-t pt-3 mt-1 ${isCounterOfferPending ? 'border-gray-200' : 'border-green-200'}`}>
+                                <div className={`bg-white rounded-lg p-4 border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 ${
+                                    isCounterOfferPending ? 'border-gray-100' : 'border-green-100'
+                                }`}>
                                     <p className="text-sm font-medium text-gray-800">Loan Tenor</p>
                                     <p className="text-xl font-bold text-[#273e8e]">
                                         {tenor} {tenor === 1 ? 'month' : 'months'}
@@ -2167,6 +2653,7 @@ const BNPLLoanDetails = () => {
                         </div>
                         {/* Pay Down Payment – Troosolar path only; partner financers settle outside this breakdown */}
                         {!isPartnerFinancing &&
+                            !hasCounterOfferTerms &&
                             isApplication &&
                             (displayStatus?.toLowerCase() === 'approved' || displayStatus?.toLowerCase() === 'counter_offer_accepted') &&
                             !order.order_id &&
@@ -2300,7 +2787,17 @@ const BNPLLoanDetails = () => {
                                                 {installment.status !== 'paid' && installment.computed_status !== 'paid' && (
                                                     <button
                                                         onClick={() => {
-                                                            setSelectedInstallment(installment);
+                                                            const dueRaw = getInstallmentDueDate(installment);
+                                                            const num = getInstallmentNumber(installment, index);
+                                                            setSelectedInstallment({
+                                                                ...installment,
+                                                                installment_number:
+                                                                    installment.installment_number ?? num,
+                                                                display_number: num,
+                                                                due_date: dueRaw,
+                                                                payment_date:
+                                                                    installment.payment_date || dueRaw,
+                                                            });
                                                             setShowPaymentModal(true);
                                                         }}
                                                         className="px-4 py-2 bg-[#273e8e] text-white text-sm font-semibold rounded-lg hover:bg-[#1a2b6b] transition-colors"
@@ -2410,15 +2907,23 @@ const BNPLLoanDetails = () => {
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
                                     {repaymentSchedule.map((installment, index) => {
-                                        const isOverdue = new Date(installment.due_date) < new Date() && installment.status !== 'paid';
+                                        const dueRaw = getInstallmentDueDate(installment);
+                                        const dueObj = dueRaw ? new Date(dueRaw) : null;
+                                        const dueValid = dueObj && !Number.isNaN(dueObj.getTime());
+                                        const installmentNo = getInstallmentNumber(installment, index);
+                                        const isOverdue =
+                                            installment.is_overdue ||
+                                            (dueValid &&
+                                                dueObj < new Date() &&
+                                                installment.status !== 'paid');
                                         const canPay = installment.status !== 'paid' && installment.id;
                                         return (
                                             <tr key={installment.id || index} className={isOverdue ? 'bg-red-50' : ''}>
                                                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                                    {installment.installment_number || index + 1}
+                                                    {installmentNo}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-700">
-                                                    {formatDate(installment.due_date)}
+                                                    {formatDate(dueRaw)}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm font-semibold text-gray-900">
                                                     {formatCurrency(installment.amount)}
@@ -2429,13 +2934,26 @@ const BNPLLoanDetails = () => {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-700">
-                                                    {installment.payment_date ? formatDate(installment.payment_date) : '-'}
+                                                    {(() => {
+                                                        const paidRaw = getInstallmentPaidAt(installment);
+                                                        // Never use payment_date here — that is the scheduled due date.
+                                                        return paidRaw ? formatDate(paidRaw) : '—';
+                                                    })()}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm">
                                                     {canPay ? (
                                                         <button
                                                             onClick={() => {
-                                                                setSelectedInstallment(installment);
+                                                                setSelectedInstallment({
+                                                                    ...installment,
+                                                                    installment_number:
+                                                                        installment.installment_number ??
+                                                                        installmentNo,
+                                                                    display_number: installmentNo,
+                                                                    due_date: dueRaw,
+                                                                    payment_date:
+                                                                        installment.payment_date || dueRaw,
+                                                                });
                                                                 setShowPaymentModal(true);
                                                             }}
                                                             className="px-3 py-1.5 bg-[#273e8e] text-white text-xs font-semibold rounded-lg hover:bg-[#1a2b6b] transition-colors"
