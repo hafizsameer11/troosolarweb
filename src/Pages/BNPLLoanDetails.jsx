@@ -37,6 +37,13 @@ import RepaymentCalendar from '../Component/RepaymentCalendar';
 /** Default BNPL interest rate (%). Used for Total Interest when backend does not provide one. Change as needed. */
 const DEFAULT_BNPL_INTEREST_RATE_PERCENT = 4;
 
+/** Format rate as "3%" / "3.5%" — no trailing zeros like "3.00%". */
+const formatInterestRatePercent = (rate) => {
+  const n = Number(rate);
+  if (!Number.isFinite(n)) return '';
+  return `${Number(n.toFixed(2))}%`;
+};
+
 /* Flutterwave script for down payment */
 const ensureFlutterwave = () =>
   new Promise((resolve, reject) => {
@@ -1312,7 +1319,7 @@ const BNPLLoanDetails = () => {
                                         ? `Initial Deposit (${depositPct}%) + Total Administrative Fees`
                                         : 'Initial Deposit + Total Administrative Fees';
                                     const interestLabel = interestRate != null && tenor
-                                        ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
+                                        ? `Total Interest Amount (${formatInterestRatePercent(interestRate)} × ${tenor} mo)`
                                         : 'Total Interest Amount';
                                     const row = (label, value, opts = {}) => {
                                         if (value === null || value === undefined) return null;
@@ -1338,7 +1345,7 @@ const BNPLLoanDetails = () => {
                                                 <div className="flex justify-between items-center gap-3">
                                                     <span className="text-gray-700">3. Interest Rate (monthly)</span>
                                                     <span className="font-bold text-[#273e8e] tabular-nums">
-                                                        {Number(interestRate).toFixed(2)}%
+                                                        {formatInterestRatePercent(interestRate)}
                                                     </span>
                                                 </div>
                                             )}
@@ -1518,7 +1525,7 @@ const BNPLLoanDetails = () => {
                         ? `Initial Deposit (${depositPct}%) + Total Administrative Fees`
                         : 'Initial Deposit + Total Administrative Fees';
                     const interestLabel = interestRate != null && tenor
-                        ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
+                        ? `Total Interest Amount (${formatInterestRatePercent(interestRate)} × ${tenor} mo)`
                         : 'Total Interest Amount';
 
                     const pickOrig = (...vals) => {
@@ -1653,7 +1660,7 @@ const BNPLLoanDetails = () => {
                                         <div className="bg-white rounded-lg p-4 border border-yellow-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                                             <p className="text-sm font-medium text-gray-800">3. Interest Rate (monthly)</p>
                                             <p className="text-xl font-bold text-[#273e8e] tabular-nums">
-                                                {Number(interestRate).toFixed(2)}%
+                                                {formatInterestRatePercent(interestRate)}
                                             </p>
                                         </div>
                                     )}
@@ -1750,7 +1757,7 @@ const BNPLLoanDetails = () => {
                         ? Math.round((repaymentAmount / tenor) * 100) / 100
                         : 0;
                     const interestLabel = interestRate != null && tenor > 0
-                        ? `Total Interest Amount (${interestRate}% × ${tenor} mo)`
+                        ? `Total Interest Amount (${formatInterestRatePercent(interestRate)} × ${tenor} mo)`
                         : 'Total Interest Amount';
                     // Use the partner-offer % (what admin set), not the customer's original snapshot %.
                     const partnerPct = Number(po.deposit_percent ?? po.depositPercent);
@@ -2597,7 +2604,7 @@ const BNPLLoanDetails = () => {
                                 value: initialDepositWithFees,
                             },
                             { label: 'Total Loan Amount', value: totalLoanAmount },
-                            { label: `Total Interest Amount (${interestRatePercent}% × ${tenor} mo)`, value: totalInterestAmount },
+                            { label: `Total Interest Amount (${formatInterestRatePercent(interestRatePercent)} × ${tenor} mo)`, value: totalInterestAmount },
                             { label: 'Total Repayment Amount', value: totalRepaymentAmount },
                             { label: 'Monthly Repayment Amount', value: monthlyRepaymentAmount },
                         ];
