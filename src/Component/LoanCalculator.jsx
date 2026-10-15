@@ -130,12 +130,13 @@ const LoanCalculator = ({
 
   const depositAmount = (grandTotal * depositPercent) / 100;
   const principal = grandTotal - depositAmount;
+  // Insurance is always % of catalog/bundle price (ex-VAT subtotal), NEVER of VAT-inclusive grand total.
   const catalogBundlePrice = Number(bundlePriceProp) > 0
     ? Number(bundlePriceProp)
-    : (isStandalone ? netAmount : 0);
+    : (netAmount > 0 ? netAmount : 0);
   const insuranceBase = catalogBundlePrice > 0
     ? catalogBundlePrice
-    : (isStandalone ? netAmount : grandTotal);
+    : (isStandalone ? Math.max(pricingInput, 0) : Math.max(netAmount, 0));
   const insuranceFee = insuranceBase * (insurancePercent / 100);
   const managementFee = principal * (managementPercent / 100);
   const legalFee = principal * (legalPercent / 100);
@@ -649,8 +650,11 @@ const LoanCalculator = ({
                 type="button"
                 onClick={() => onConfirm({
                   totalAmount: grandTotal,
-                  bundlePrice: catalogBundlePrice > 0 ? catalogBundlePrice : insuranceBase,
+                  // Always persist catalog/bundle price for insurance (counter-offer + review).
+                  bundlePrice: insuranceBase,
+                  catalogSubtotal: insuranceBase,
                   netAmount,
+                  baseDepositAmount: depositAmount,
                   depositPercent,
                   depositAmount,
                   principal,
@@ -663,9 +667,18 @@ const LoanCalculator = ({
                   vatAmount,
                   amountExcludingVat: netAmount,
                   grandTotal,
+                  insurancePct: insurancePercent,
+                  managementPct: managementPercent,
+                  legalPct: legalPercent,
+                  feePercentages: {
+                    insurance: insurancePercent,
+                    management: managementPercent,
+                    legal: legalPercent,
+                  },
                   insuranceFee,
                   managementFee,
                   legalFee,
+                  adminFeesTotal: administrativeFees,
                   totalAdministrativeFees: administrativeFees,
                   upfrontDue,
                   tenor,

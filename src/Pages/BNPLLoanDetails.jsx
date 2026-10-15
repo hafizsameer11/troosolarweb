@@ -1109,11 +1109,17 @@ const BNPLLoanDetails = () => {
             showPartnerOfferSection
             || partnerFinancingPath === 'partner'
             || String(order?.credit_check_method || loanApp?.credit_check_method || '').toLowerCase() === 'partner';
-        const partnerDownPaymentDone = isPartnerFinancingPath && !!(
+        const paymentStatusPaid = ['paid', 'completed', 'success'].includes(
+            String(order.payment_status || '').toLowerCase()
+        );
+        // Order view always means down payment was collected; application may only set flags.
+        const downPaymentDone = !!(
             order.down_payment_completed
             || order.order_id
-            || String(order.payment_status || '').toLowerCase() === 'paid'
+            || (!isApplication && order.id)
+            || paymentStatusPaid
         );
+        const partnerDownPaymentDone = isPartnerFinancingPath && downPaymentDone;
         const hasCounterOfferTerms = !!(
             order.had_counter_offer ||
             (order.counter_offer_min_deposit != null && order.counter_offer_min_deposit !== '' &&
@@ -1563,8 +1569,7 @@ const BNPLLoanDetails = () => {
                     const canPayDown =
                         isApplication &&
                         (statusLower === 'approved' || statusLower === 'counter_offer_accepted') &&
-                        !order.order_id &&
-                        !order.down_payment_completed &&
+                        !downPaymentDone &&
                         upfront > 0;
 
                     const coRow = (label, value, opts = {}) => {
@@ -1776,10 +1781,11 @@ const BNPLLoanDetails = () => {
                         { label: 'Total Repayment Amount', value: repaymentAmount },
                         { label: 'Monthly Repayment Amount', value: monthlyRepayment },
                     ];
+                    // Never show Pay Down Payment after deposit is done (incl. order view / paid status).
                     const canPay =
+                        isApplication &&
                         upfrontDue > 0 &&
-                        !order.order_id &&
-                        !order.down_payment_completed;
+                        !downPaymentDone;
 
                     // Customer's original application choice (from snapshot) — must stay visible with the offer.
                     const pickOrig = (...vals) => {
@@ -1979,13 +1985,13 @@ const BNPLLoanDetails = () => {
                                         )}
                                     </button>
                                 </div>
-                            ) : (order.order_id || order.down_payment_completed || !isApplication) ? (
+                            ) : downPaymentDone ? (
                                 <div className="mt-4 rounded-lg p-4 border border-indigo-200 bg-indigo-50">
                                     <p className="text-sm font-semibold text-indigo-900 mb-1">
-                                        Down payment completed
+                                        Partner financing — you&apos;re all set
                                     </p>
                                     <p className="text-sm text-indigo-800">
-                                        Your Troosolar payment for this partner offer is complete. Monthly debits and the remaining loan balance are handled by the financing partner — you will not make installment payments through Troosolar.
+                                        Thank you for your down payment. Your monthly repayments on the remaining loan balance will be handled by your financing partner
                                     </p>
                                 </div>
                             ) : (
@@ -1998,31 +2004,25 @@ const BNPLLoanDetails = () => {
                     );
                 })()}
 
-                {/* Down payment completed – Troosolar path: order + installments; partner path: end of Troosolar payment flow */}
-                {isApplication && (order.order_id || order.down_payment_completed) && (
-                    <div className={`${isPartnerFinancingPath ? 'bg-indigo-50 border-indigo-200' : 'bg-green-50 border-green-200'} border-2 rounded-xl p-6`}>
+                {/* Down payment completed – Troosolar path only here when partner section already shows the partner note */}
+                {isApplication && downPaymentDone && !isPartnerFinancingPath && (
+                    <div className="bg-green-50 border-green-200 border-2 rounded-xl p-6">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div className="flex items-center gap-3">
-                                <CheckCircle2 className={isPartnerFinancingPath ? 'text-indigo-600' : 'text-green-600'} size={28} />
+                                <CheckCircle2 className="text-green-600" size={28} />
                                 <div>
-                                    <h3 className={`text-lg font-semibold ${isPartnerFinancingPath ? 'text-indigo-900' : 'text-green-800'}`}>
+                                    <h3 className="text-lg font-semibold text-green-800">
                                         Down payment completed
                                     </h3>
-                                    {isPartnerFinancingPath ? (
-                                        <p className="text-sm text-indigo-800">
-                                            This is where the Troosolar payment flow ends. Your monthly repayments will be handled by the financing partner, not through Troosolar. You will not see a Troosolar installment schedule for this loan.
-                                        </p>
-                                    ) : (
-                                        <p className="text-sm text-green-700">Your BNPL order has been placed. View your order for repayment schedule and installments.</p>
-                                    )}
+                                    <p className="text-sm text-green-700">Your BNPL order has been placed. View your order for repayment schedule and installments.</p>
                                     {order.order_number && (
-                                        <p className={`text-sm mt-1 ${isPartnerFinancingPath ? 'text-indigo-700' : 'text-green-600'}`}>
+                                        <p className="text-sm mt-1 text-green-600">
                                             Order #{order.order_number}
                                         </p>
                                     )}
                                 </div>
                             </div>
-                            {order.order_id && !isPartnerFinancingPath && (
+                            {order.order_id && (
                                 <button
                                     type="button"
                                     onClick={() => navigate(`/bnpl-loans/${order.order_id}`)}
@@ -2035,17 +2035,17 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
-                {/* Partner financing — order view note after down payment */}
-                {!isApplication && partnerDownPaymentDone && (
+                {/* Partner financing note after down payment (when partner offer section is not already showing it) */}
+                {partnerDownPaymentDone && !showPartnerOfferSection && (
                     <div className="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-6">
                         <div className="flex items-start gap-3">
                             <CheckCircle2 className="text-indigo-600 flex-shrink-0 mt-0.5" size={28} />
                             <div>
                                 <h3 className="text-lg font-semibold text-indigo-900 mb-1">
-                                    Partner financing — payment complete with Troosolar
+                                    Partner financing — you&apos;re all set
                                 </h3>
                                 <p className="text-sm text-indigo-800">
-                                    You have paid your down payment to Troosolar. Monthly debits and the remaining balance are handled by the financing partner. There is no Troosolar installment schedule or monthly pay flow for this loan.
+                                    Thank you for your down payment. Your monthly repayments on the remaining loan balance will be handled by your financing partner
                                 </p>
                             </div>
                         </div>
@@ -2656,8 +2656,7 @@ const BNPLLoanDetails = () => {
                             !hasCounterOfferTerms &&
                             isApplication &&
                             (displayStatus?.toLowerCase() === 'approved' || displayStatus?.toLowerCase() === 'counter_offer_accepted') &&
-                            !order.order_id &&
-                            !order.down_payment_completed &&
+                            !downPaymentDone &&
                             (loanCalc?.down_payment || ld?.depositAmount) &&
                             parseAmount(repaymentSummary?.paid_amount ?? 0) <
                                 parseAmount(loanCalc?.down_payment ?? ld?.depositAmount) && (
