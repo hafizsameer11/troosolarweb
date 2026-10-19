@@ -759,22 +759,45 @@ const BNPLLoanDetails = () => {
         }
     };
 
-    const formatDate = (dateString) => {
+    /** Calendar date only — no "at 01:00" / midnight noise from UTC due dates. */
+    const formatDateOnly = (dateString) => {
         if (!dateString) return 'N/A';
         try {
-            const d = new Date(dateString);
+            const s = String(dateString);
+            const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            const d = ymd
+                ? new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]))
+                : new Date(s);
             if (Number.isNaN(d.getTime())) return 'N/A';
             return d.toLocaleDateString('en-NG', {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
             });
         } catch {
             return 'N/A';
         }
     };
+
+    /** Date + time for real events (payment / created timestamps). */
+    const formatDateTime = (dateString) => {
+        if (!dateString) return 'N/A';
+        try {
+            const d = new Date(dateString);
+            if (Number.isNaN(d.getTime())) return 'N/A';
+            return d.toLocaleString('en-NG', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        } catch {
+            return 'N/A';
+        }
+    };
+
+    const formatDate = formatDateTime;
 
     /** Backend due date field is payment_date; when the customer actually paid is paid_at. */
     const getInstallmentDueDate = (inst) =>
@@ -2778,7 +2801,7 @@ const BNPLLoanDetails = () => {
                                                     )}
                                                 </div>
                                                 <p className="text-sm text-gray-600">
-                                                    Due: {formatDate(installment.payment_date || installment.due_date)}
+                                                    Due: {formatDateOnly(installment.payment_date || installment.due_date)}
                                                 </p>
                                                 {installment.remaining_duration && (
                                                     <p className="text-xs text-gray-500 mt-1">
@@ -2929,7 +2952,7 @@ const BNPLLoanDetails = () => {
                                                     {installmentNo}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-700">
-                                                    {formatDate(dueRaw)}
+                                                    {formatDateOnly(dueRaw)}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm font-semibold text-gray-900">
                                                     {formatCurrency(installment.amount)}
@@ -2943,7 +2966,7 @@ const BNPLLoanDetails = () => {
                                                     {(() => {
                                                         const paidRaw = getInstallmentPaidAt(installment);
                                                         // Never use payment_date here — that is the scheduled due date.
-                                                        return paidRaw ? formatDate(paidRaw) : '—';
+                                                        return paidRaw ? formatDateTime(paidRaw) : '—';
                                                     })()}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm">
