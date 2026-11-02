@@ -69,7 +69,16 @@ const LinkComp = ({
           name === "Cart" || name === "More" || name === "Visit Website"
             ? "w-7 h-7 ms-2"
             : "w-10 h-10"
-        } ${isActive ? "invert" : "group-hover:invert"}`}
+        } ${
+          // window.png is dark blue; force white on blue sidebar, dark on white hover/active.
+          name === "Visit Website"
+            ? isActive
+              ? "brightness-0"
+              : "brightness-0 invert group-hover:invert-0"
+            : isActive
+              ? "invert"
+              : "group-hover:invert"
+        }`}
       />
       {!menuStatus && <span className="ml-3 font-medium">{name}</span>}
 
