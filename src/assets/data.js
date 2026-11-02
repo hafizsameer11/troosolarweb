@@ -105,6 +105,13 @@ export const Sidebar_links = [
   { name: "Solar Calculators", link: "/tools", icon: assets.settings, sublinks: [] },
   { name: "Cart", link: "/cart", icon: assets.cart, sublinks: [] },
   { name: "More", link: "/more", icon: assets.userGear, sublinks: [] },
+  {
+    name: "Visit Website",
+    link: "https://troosolar.com/",
+    icon: assets.window,
+    sublinks: [],
+    external: true,
+  },
 ];
 
 export const solarBundleData = [

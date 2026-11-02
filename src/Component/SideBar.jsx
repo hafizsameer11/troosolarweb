@@ -113,8 +113,11 @@ const SideBar = () => {
                   link={x.link}
                   icon={x.icon}
                   sub={x.sublinks}
-                  isActiveCheck={activeLink === x.link}
-                  onClick={() => setActiveLink(x.link)}
+                  external={!!x.external}
+                  isActiveCheck={!x.external && activeLink === x.link}
+                  onClick={() => {
+                    if (!x.external) setActiveLink(x.link);
+                  }}
                   menuStatus={menuOpen}
                 />
               </li>
