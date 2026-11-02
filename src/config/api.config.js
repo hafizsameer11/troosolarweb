@@ -97,6 +97,8 @@ const API = {
     BNPL_CONFIRM_DOWN_PAYMENT: (applicationId) => `${BASE_URL}/bnpl/applications/${applicationId}/confirm-down-payment`,
     BNPL_INVOICE: (applicationId) => `${BASE_URL}/bnpl/invoice/${applicationId}`,
     BNPL_PROCESS_CREDIT_CHECK: `${BASE_URL}/bnpl/process-credit-check`,
+    BNPL_CREDIT_CHECK_FEE_STATUS: `${BASE_URL}/bnpl/credit-check-fee/status`,
+    BNPL_CREDIT_CHECK_FEE_CONFIRM: `${BASE_URL}/bnpl/credit-check-fee/confirm`,
     BNPL_CREDIT_CHECK_FEE_MONO_INITIATE: `${BASE_URL}/bnpl/credit-check-fee/mono/initiate`,
     BNPL_CREDIT_CHECK_FEE_MONO_VERIFY: `${BASE_URL}/bnpl/credit-check-fee/mono/verify`,
     BNPL_MANDATE_STATUS: (monoCalculationId) => `${BASE_URL}/bnpl/mandate/status/${monoCalculationId}`,

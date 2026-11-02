@@ -15,7 +15,7 @@ const ensureFlutterwave = () =>
     document.body.appendChild(s);
   });
 
-const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSuccess }) => {
+const BNPLPaymentModal = ({ installment, monoDebitMandate, creditCheckMethod, isOpen, onClose, onSuccess }) => {
   const [paymentMethod, setPaymentMethod] = useState('wallet');
   const [walletType, setWalletType] = useState('shop');
   const [walletBalance, setWalletBalance] = useState(null);
@@ -449,7 +449,7 @@ const BNPLPaymentModal = ({ installment, monoDebitMandate, isOpen, onClose, onSu
                 </div>
               </button>
 
-              {monoDebitMandate?.ready_to_debit && (
+              {String(creditCheckMethod || '').toLowerCase() === 'manual' && monoDebitMandate?.ready_to_debit && (
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('mono_debit')}

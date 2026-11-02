@@ -325,6 +325,8 @@ const BNPLFlow = () => {
             return false;
         }
     });
+    const [creditCheckFeeReference, setCreditCheckFeeReference] = useState(null);
+    const [creditCheckFeeWaiverReason, setCreditCheckFeeWaiverReason] = useState(null);
     const [bnplTermsAccepted, setBnplTermsAccepted] = useState(() => typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bnpl_terms_accepted') === 'true');
     const [bnplTermsCheckbox, setBnplTermsCheckbox] = useState(false);
     const [cartToken, setCartToken] = useState(null);
@@ -781,7 +783,8 @@ const BNPLFlow = () => {
         };
     };
     
-    // Default credit check method when step 10 is reached
+    // Default credit check method when step 10 is reached.
+    // Manual is not a free choice while Mono Connect is available — only after Mono fails (or Mono is admin-disabled).
     React.useEffect(() => {
         if (step !== 10) return;
         if (formData.financingPath === 'partner') {
@@ -792,17 +795,19 @@ const BNPLFlow = () => {
         }
         const copy = getCreditCheckMethodCopy(formData.customerType);
         const current = formData.creditCheckMethod;
+        const manualAllowed = copy.manual_enabled && (!copy.auto_enabled || monoFailed);
         const currentOk =
             (current === 'auto' && copy.auto_enabled) ||
-            (current === 'manual' && copy.manual_enabled);
+            (current === 'manual' && manualAllowed);
         if (currentOk) return;
         let next = '';
-        if (copy.auto_enabled) next = 'auto';
-        else if (copy.manual_enabled) next = 'manual';
+        if (copy.auto_enabled && !monoFailed) next = 'auto';
+        else if (manualAllowed) next = 'manual';
+        else if (copy.auto_enabled) next = 'auto';
         if (next && next !== current) {
             setFormData((prev) => ({ ...prev, creditCheckMethod: next }));
         }
-    }, [step, formData.financingPath, formData.customerType, formData.creditCheckMethod, loanConfig]);
+    }, [step, formData.financingPath, formData.customerType, formData.creditCheckMethod, loanConfig, monoFailed]);
 
     // Fresh admin copy when landing on credit check (Troosolar method cards / partner fee text)
     React.useEffect(() => {
@@ -825,19 +830,55 @@ const BNPLFlow = () => {
 
     React.useEffect(() => {
         if (step !== 10) return;
-        if (formData.financingPath === 'partner') {
-            setFormData((prev) => ({ ...prev, creditCheckMethod: 'partner' }));
-            setCreditCheckFeePaid(!!skipCreditCheckFee);
+        let cancelled = false;
+        const applyFeeStatus = async () => {
+            let waived = !!skipCreditCheckFee;
+            let reason = skipCreditCheckFee ? 'prior_application' : null;
+            let paidRef = null;
+            try {
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    const params = {};
+                    if (reapplyPriorApplicationId) {
+                        params.prior_application_id = reapplyPriorApplicationId;
+                    }
+                    const res = await axios.get(API.BNPL_CREDIT_CHECK_FEE_STATUS, {
+                        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+                        params,
+                    });
+                    const data = res.data?.data || {};
+                    if (data.waived) {
+                        waived = true;
+                        reason = data.reason || reason;
+                        paidRef = data.paid_reference || null;
+                    }
+                }
+            } catch {
+                /* keep local skip flag */
+            }
+            if (cancelled) return;
+            setCreditCheckFeeWaiverReason(reason);
+            if (waived) {
+                setSkipCreditCheckFee(true);
+                setCreditCheckFeePaid(true);
+                if (paidRef) setCreditCheckFeeReference(paidRef);
+            } else if (!skipCreditCheckFee) {
+                setCreditCheckFeePaid(false);
+                setCreditCheckFeeReference(null);
+            }
             setMonoFeePaymentReference(null);
             setShowCreditCheckFeeModal(false);
-            setCreditCheckPhase(skipCreditCheckFee ? 'partner_ready' : 'pay_fee');
-            return;
-        }
-        setCreditCheckPhase('choose_method');
-        setCreditCheckFeePaid(false);
-        setMonoFeePaymentReference(null);
-        setShowCreditCheckFeeModal(false);
-    }, [step]);
+            if (formData.financingPath === 'partner') {
+                setFormData((prev) => ({ ...prev, creditCheckMethod: 'partner' }));
+                setCreditCheckPhase(waived ? 'partner_ready' : 'pay_fee');
+            } else {
+                setCreditCheckPhase('choose_method');
+            }
+        };
+        applyFeeStatus();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [step, reapplyPriorApplicationId]);
 
     React.useEffect(() => {
         if (step !== 10) return;
@@ -5240,17 +5281,28 @@ const BNPLFlow = () => {
         setProcessingCreditCheckPayment(false);
     };
 
+    const unlockManualReviewAfterMonoFailure = (message) => {
+        setMonoFailed(true);
+        setFormData((prev) => ({ ...prev, creditCheckMethod: 'manual' }));
+        const useManual = confirm(
+            `${message}\n\nMono Connect is unavailable right now. Continue with manual review (bank statement + selfie)?`
+        );
+        if (useManual) {
+            if (skipCreditCheckFee || creditCheckFeePaid) {
+                setCreditCheckPhase('manual_upload');
+            } else {
+                setCreditCheckPhase('pay_fee');
+            }
+            return true;
+        }
+        return false;
+    };
+
     const handleMonoCreditCheckError = async (error) => {
         console.error('Credit check processing error:', error);
         const errorMsg = error.response?.data?.message || error.message || 'Credit check processing failed';
         setProcessingCreditCheckPayment(false);
-
-        const useManual = confirm(`${errorMsg}\n\nWould you like to proceed with manual credit check review instead?`);
-        if (useManual) {
-            setMonoFailed(true);
-            setFormData((prev) => ({ ...prev, creditCheckMethod: 'manual' }));
-            setCreditCheckPhase('manual_upload');
-        }
+        unlockManualReviewAfterMonoFailure(errorMsg);
     };
 
     const getCreditCheckFee = () => Number(loanConfig?.credit_check_fee) || DEFAULT_CREDIT_CHECK_FEE;
@@ -5303,6 +5355,7 @@ const BNPLFlow = () => {
             );
             if (response.data?.data?.paid) {
                 setMonoFeePaymentReference(reference);
+                setCreditCheckFeeReference(response.data?.data?.reference || reference);
                 await afterCreditCheckFeePaid();
                 return true;
             }
@@ -5317,12 +5370,22 @@ const BNPLFlow = () => {
     };
 
     const advanceFromMethodChoice = () => {
-        if (!formData.creditCheckMethod) {
+        const copy = getCreditCheckMethodCopy(formData.customerType);
+        const manualAllowed = copy.manual_enabled && (!copy.auto_enabled || monoFailed);
+        let method = formData.creditCheckMethod;
+        // Enforce Mono-first: ignore a free manual selection while Connect your bank is available.
+        if (method === 'manual' && !manualAllowed) {
+            method = copy.auto_enabled ? 'auto' : '';
+            if (method) {
+                setFormData((prev) => ({ ...prev, creditCheckMethod: method }));
+            }
+        }
+        if (!method) {
             alert('Please choose how you would like to complete your credit check.');
             return;
         }
-        setMonoFailed(false);
-        if (formData.creditCheckMethod === 'auto') {
+        if (method === 'auto') {
+            setMonoFailed(false);
             if (skipCreditCheckFee && userMonoAccount?.linked) {
                 proceedWithAutoCreditCheck();
                 return;
@@ -5332,6 +5395,10 @@ const BNPLFlow = () => {
                 return;
             }
             setCreditCheckPhase('mono_link');
+            return;
+        }
+        if (!manualAllowed) {
+            alert('Manual review is only available when Mono Connect is unavailable. Please connect your bank.');
             return;
         }
         if (skipCreditCheckFee) {
@@ -5372,8 +5439,10 @@ const BNPLFlow = () => {
                         setProcessingCreditCheckPayment(false);
                     }
                 } catch (error) {
-                    alert(error?.response?.data?.message || error.message || 'Failed to link bank account');
                     setProcessingCreditCheckPayment(false);
+                    unlockManualReviewAfterMonoFailure(
+                        error?.response?.data?.message || error.message || 'Failed to link bank account with Mono.'
+                    );
                 }
             };
 
@@ -5391,8 +5460,10 @@ const BNPLFlow = () => {
             });
         } catch (error) {
             console.error('Failed to initialize Mono Connect:', error);
-            alert(error.message || 'Failed to open bank connection. Try again or choose manual review.');
             setProcessingCreditCheckPayment(false);
+            unlockManualReviewAfterMonoFailure(
+                error.message || 'Failed to open Mono Connect bank linking.'
+            );
         }
     };
 
@@ -5444,6 +5515,31 @@ const BNPLFlow = () => {
                         await new Promise(resolve => setTimeout(resolve, 800));
                         dismissFlutterwaveOverlay();
                         setShowCreditCheckFeeModal(false);
+                        try {
+                            const token = localStorage.getItem('access_token');
+                            const confirmRes = await axios.post(
+                                API.BNPL_CREDIT_CHECK_FEE_CONFIRM,
+                                {
+                                    reference: response?.tx_ref || txRef,
+                                    method: 'flutterwave',
+                                    amount: creditCheckFee,
+                                },
+                                {
+                                    headers: {
+                                        Authorization: `Bearer ${token}`,
+                                        Accept: 'application/json',
+                                        'Content-Type': 'application/json',
+                                    },
+                                }
+                            );
+                            const ref = confirmRes.data?.data?.reference || response?.tx_ref || txRef;
+                            setCreditCheckFeeReference(ref);
+                        } catch (confirmErr) {
+                            console.error('Credit check fee confirm error:', confirmErr);
+                            alert(confirmErr.response?.data?.message || 'Payment succeeded but could not be recorded. Please contact support before re-trying.');
+                            setProcessingCreditCheckPayment(false);
+                            return;
+                        }
                         await afterCreditCheckFeePaid();
                     } else {
                         alert("Payment was not successful. Please try again.");
@@ -5774,10 +5870,12 @@ const BNPLFlow = () => {
                     </p>
                 )}
 
-                {skipCreditCheckFee && (phase === 'choose_method' || phase === 'partner_ready') && (
+                {skipCreditCheckFee && (phase === 'choose_method' || phase === 'partner_ready' || phase === 'pay_fee') && (
                     <div className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4">
                         <p className="text-sm text-green-800 font-medium">
-                            Re-application detected: your credit check fee is waived for this submission.
+                            {creditCheckFeeWaiverReason === 'prior_application'
+                                ? 'Re-application detected: your credit check fee is waived for this submission.'
+                                : 'Credit check fee already paid recently — you will not be charged again for this application.'}
                         </p>
                     </div>
                 )}
@@ -5825,76 +5923,80 @@ const BNPLFlow = () => {
                         manual_title: manualTitle,
                         manual_description: manualDescription,
                     } = copy;
+                    // Manual only when Mono is admin-disabled or Mono Connect already failed.
+                    const manualSelectable = manualEnabled && (!autoEnabled || monoFailed);
                     const selectedAuto = isAutoMethod && autoEnabled;
-                    const selectedManual = isManualMethod && manualEnabled;
+                    const selectedManual = isManualMethod && manualSelectable;
                     const canContinue = (formData.creditCheckMethod === 'auto' && autoEnabled)
-                        || (formData.creditCheckMethod === 'manual' && manualEnabled);
+                        || (formData.creditCheckMethod === 'manual' && manualSelectable);
+                    const showBoth = autoEnabled && manualSelectable;
+                    const introText = autoEnabled && !monoFailed
+                        ? 'Connect your bank with Mono to continue your credit check. Manual review is only offered if Mono Connect is unavailable.'
+                        : intro;
 
                     return (
                     <>
-                        <p className="text-gray-600 mb-6 whitespace-pre-line">{intro}</p>
-                        <div className="grid gap-4 mb-6 md:grid-cols-2">
+                        <p className="text-gray-600 mb-6 whitespace-pre-line">{introText}</p>
+                        <div className={`grid gap-4 mb-6 ${showBoth ? 'md:grid-cols-2' : 'md:grid-cols-1'}`}>
+                            {autoEnabled && (
                             <button
                                 type="button"
-                                disabled={!autoEnabled}
                                 onClick={() => {
-                                    if (!autoEnabled) return;
                                     setMonoFailed(false);
                                     setFormData((prev) => ({ ...prev, creditCheckMethod: 'auto' }));
                                 }}
                                 className={`p-6 rounded-xl border-2 text-left transition-colors ${
-                                    !autoEnabled
-                                        ? 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed'
-                                        : selectedAuto
-                                            ? 'border-[#273e8e] bg-blue-50'
-                                            : 'border-gray-200 hover:border-[#273e8e]/50'
+                                    selectedAuto
+                                        ? 'border-[#273e8e] bg-blue-50'
+                                        : 'border-gray-200 hover:border-[#273e8e]/50'
                                 }`}
                             >
                                 <div className="flex items-center mb-2 flex-wrap gap-2">
-                                    <CheckCircle size={20} className={autoEnabled ? 'text-[#273e8e]' : 'text-gray-400'} />
-                                    <span className={`ml-2 font-bold ${autoEnabled ? 'text-gray-800' : 'text-gray-500'}`}>{autoTitle}</span>
-                                    {!autoEnabled && (
-                                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
-                                            {unavailableLabel}
-                                        </span>
-                                    )}
+                                    <CheckCircle size={20} className="text-[#273e8e]" />
+                                    <span className="ml-2 font-bold text-gray-800">{autoTitle}</span>
                                 </div>
-                                <p className={`text-sm ml-7 ${autoEnabled ? 'text-gray-500' : 'text-gray-400'}`}>
+                                <p className="text-sm ml-7 text-gray-500">
                                     {autoDescription}
                                 </p>
                             </button>
+                            )}
 
+                            {manualSelectable && (
                             <button
                                 type="button"
-                                disabled={!manualEnabled}
                                 onClick={() => {
-                                    if (!manualEnabled) return;
                                     setFormData((prev) => ({ ...prev, creditCheckMethod: 'manual' }));
                                 }}
                                 className={`p-6 rounded-xl border-2 text-left transition-colors ${
-                                    !manualEnabled
-                                        ? 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed'
-                                        : selectedManual
-                                            ? 'border-[#273e8e] bg-blue-50'
-                                            : 'border-gray-200 hover:border-[#273e8e]/50'
+                                    selectedManual
+                                        ? 'border-[#273e8e] bg-blue-50'
+                                        : 'border-gray-200 hover:border-[#273e8e]/50'
                                 }`}
                             >
                                 <div className="flex items-center mb-2 flex-wrap gap-2">
-                                    <CheckCircle size={20} className={manualEnabled ? 'text-[#273e8e]' : 'text-gray-400'} />
-                                    <span className={`ml-2 font-bold ${manualEnabled ? 'text-gray-800' : 'text-gray-500'}`}>{manualTitle}</span>
-                                    {!manualEnabled && (
+                                    <CheckCircle size={20} className="text-[#273e8e]" />
+                                    <span className="ml-2 font-bold text-gray-800">{manualTitle}</span>
+                                    {monoFailed && (
+                                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                            Mono unavailable — fallback
+                                        </span>
+                                    )}
+                                    {!autoEnabled && (
                                         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
-                                            {unavailableLabel}
+                                            {unavailableLabel === 'Currently unavailable' ? 'Available' : unavailableLabel}
                                         </span>
                                     )}
                                 </div>
-                                <p className={`text-sm ml-7 ${manualEnabled ? 'text-gray-500' : 'text-gray-400'}`}>
-                                    {manualDescription}
+                                <p className="text-sm ml-7 text-gray-500">
+                                    {monoFailed
+                                        ? 'Mono Connect did not work. Upload your bank statement and selfie for manual review.'
+                                        : manualDescription}
                                 </p>
                             </button>
+                            )}
                         </div>
 
-                        {!autoEnabled && !manualEnabled && (
+                        {!autoEnabled && !manualSelectable && (
                             <p className="text-sm text-amber-700 mb-4">
                                 No credit check methods are available to select right now. Please contact support.
                             </p>
@@ -5964,6 +6066,23 @@ const BNPLFlow = () => {
                                     className="w-full bg-[#273e8e] text-white py-4 rounded-xl font-bold hover:bg-[#1a2b6b] transition-colors disabled:opacity-50"
                                 >
                                     {skipCreditCheckFee ? 'Continue (fee waived)' : 'Continue to verification fee'}
+                                </button>
+                            )}
+                            {monoFailed && getCreditCheckMethodCopy(formData.customerType).manual_enabled && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFormData((prev) => ({ ...prev, creditCheckMethod: 'manual' }));
+                                        if (skipCreditCheckFee || creditCheckFeePaid) {
+                                            setCreditCheckPhase('manual_upload');
+                                        } else {
+                                            setCreditCheckPhase('pay_fee');
+                                        }
+                                    }}
+                                    disabled={processingCreditCheckPayment}
+                                    className="w-full border-2 border-amber-500 text-amber-800 py-3 rounded-xl font-semibold hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                >
+                                    Continue with manual review instead
                                 </button>
                             )}
                         </div>
@@ -6137,9 +6256,18 @@ const BNPLFlow = () => {
             }
 
             const financingPath = formData.financingPath === 'partner' ? 'partner' : 'troosolar';
-            const creditMethod = financingPath === 'partner'
+            let creditMethod = financingPath === 'partner'
                 ? 'partner'
-                : (formData.creditCheckMethod || 'manual');
+                : (formData.creditCheckMethod || 'auto');
+            // Manual submit only after Mono failure (or when Mono is admin-disabled).
+            if (financingPath !== 'partner' && creditMethod === 'manual') {
+                const copy = getCreditCheckMethodCopy(formData.customerType);
+                const manualAllowed = copy.manual_enabled && (!copy.auto_enabled || monoFailed);
+                if (!manualAllowed) {
+                    creditMethod = copy.auto_enabled ? 'auto' : creditMethod;
+                    setFormData((prev) => ({ ...prev, creditCheckMethod: creditMethod }));
+                }
+            }
             formDataToSend.set('credit_check_method', creditMethod);
             formDataToSend.append('financing_path', financingPath);
             if (formData.financingPartnerId) {
@@ -6233,6 +6361,10 @@ const BNPLFlow = () => {
             const compulsoryAddOns = addOns.filter(a => a.is_compulsory_bnpl).map(a => a.id);
             if (compulsoryAddOns.length > 0) {
                 compulsoryAddOns.forEach(id => formDataToSend.append('add_on_ids[]', id));
+            }
+
+            if (creditCheckFeeReference) {
+                formDataToSend.append('credit_check_fee_reference', String(creditCheckFeeReference));
             }
 
             // Files — required for partner path (collected on Final Application) and Troosolar manual/failed Mono

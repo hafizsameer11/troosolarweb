@@ -336,54 +336,54 @@ const BNPLLoanDetails = () => {
                     setLoading(false);
                     return;
                 }
-
+                
                 // Pre-order applications must not show installment/overdue data from other loans.
                 const hasActiveOrder = !!(appData.order_id || appData.down_payment_completed);
                 setInstallmentsWithHistory(null);
                 let repaymentSchedule = [];
 
                 if (hasActiveOrder) {
-                    try {
-                        const scheduleResponse = await axios.get(API.BNPL_REPAYMENT_SCHEDULE(applicationId), {
-                            headers: {
-                                Authorization: `Bearer ${token}`,
+                try {
+                    const scheduleResponse = await axios.get(API.BNPL_REPAYMENT_SCHEDULE(applicationId), {
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
                                 Accept: 'application/json',
                             },
-                        });
-
-                        if (scheduleResponse.data.status === 'success' && scheduleResponse.data.data) {
+                    });
+                    
+                    if (scheduleResponse.data.status === 'success' && scheduleResponse.data.data) {
                             repaymentSchedule =
                                 scheduleResponse.data.data.installments ||
                                 scheduleResponse.data.data.schedule ||
                                 scheduleResponse.data.data ||
                                 [];
-                        }
-                    } catch (scheduleErr) {
-                        console.log('Could not fetch repayment schedule:', scheduleErr);
                     }
-
-                    try {
-                        const historyResponse = await axios.get(API.Loan_Payment_Relate, {
-                            headers: {
-                                Authorization: `Bearer ${token}`,
+                } catch (scheduleErr) {
+                    console.log('Could not fetch repayment schedule:', scheduleErr);
+                }
+                
+                try {
+                    const historyResponse = await axios.get(API.Loan_Payment_Relate, {
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
                                 Accept: 'application/json',
                             },
-                        });
-
-                        if (historyResponse.data.status === 'success' && historyResponse.data.data) {
-                            setInstallmentsWithHistory(historyResponse.data.data);
-                            if (repaymentSchedule.length === 0) {
-                                const currentMonth = historyResponse.data.data.current_month || [];
-                                const history = historyResponse.data.data.history || [];
-                                repaymentSchedule = [...currentMonth, ...history].sort((a, b) => {
-                                    const dateA = new Date(a.payment_date || a.due_date);
-                                    const dateB = new Date(b.payment_date || b.due_date);
-                                    return dateA - dateB;
-                                });
-                            }
+                    });
+                    
+                    if (historyResponse.data.status === 'success' && historyResponse.data.data) {
+                        setInstallmentsWithHistory(historyResponse.data.data);
+                        if (repaymentSchedule.length === 0) {
+                            const currentMonth = historyResponse.data.data.current_month || [];
+                            const history = historyResponse.data.data.history || [];
+                            repaymentSchedule = [...currentMonth, ...history].sort((a, b) => {
+                                const dateA = new Date(a.payment_date || a.due_date);
+                                const dateB = new Date(b.payment_date || b.due_date);
+                                return dateA - dateB;
+                            });
                         }
-                    } catch (historyErr) {
-                        console.log('Could not fetch installments with history:', historyErr);
+                    }
+                } catch (historyErr) {
+                    console.log('Could not fetch installments with history:', historyErr);
                     }
                 }
                 
@@ -1048,7 +1048,7 @@ const BNPLLoanDetails = () => {
         if (!isApplication && isLoanFullyPaid(order)) {
             return 'payment_complete';
         }
-
+        
         // For orders with loan applications, prioritize loan application status
         if (!isApplication && loanApp) {
             // If loan is approved and down payment is completed, show as approved/active
@@ -1061,7 +1061,7 @@ const BNPLLoanDetails = () => {
                 return loanApp.status;
             }
         }
-
+        
         // For applications, use application status (partner_offer must win over a stale pending,
         // but must not override approved/rejected after down payment).
         if (isApplication) {
@@ -1081,17 +1081,17 @@ const BNPLLoanDetails = () => {
             if (order.status) return order.status;
             if (loanApp?.status) return loanApp.status;
         }
-
+        
         // For orders, check both order_status and status
         const orderStatus = order.order_status || order.status;
-
+        
         // If payment is paid but order status is pending, and there's an approved loan, show approved
         if (order.payment_status === 'paid' && 
             orderStatus?.toLowerCase() === 'pending' && 
             loanApp?.status?.toLowerCase() === 'approved') {
             return 'approved';
         }
-
+        
         return orderStatus || order.status || 'pending';
     };
 
@@ -1346,7 +1346,7 @@ const BNPLLoanDetails = () => {
                                         : 'Total Interest Amount';
                                     const row = (label, value, opts = {}) => {
                                         if (value === null || value === undefined) return null;
-                                        return (
+                                    return (
                                             <div
                                                 key={label}
                                                 className={`flex justify-between items-center gap-3 ${opts.border ? 'border-t border-yellow-200 pt-2 mt-1' : ''}`}
@@ -1356,8 +1356,8 @@ const BNPLLoanDetails = () => {
                                                 </span>
                                                 <span className={`font-bold tabular-nums ${opts.accent || 'text-gray-800'}`}>
                                                     {opts.suffix || formatCurrency(value)}
-                                                </span>
-                                            </div>
+                                                    </span>
+                                                </div>
                                         );
                                     };
                                     return (
@@ -1451,8 +1451,8 @@ const BNPLLoanDetails = () => {
                                         const minimumTenor = parseInt(
                                             d.repayment_duration
                                             || order.counter_offer_min_tenor
-                                            || loanCalc?.repayment_duration
-                                            || loanCalc?.tenor
+                                            || loanCalc?.repayment_duration 
+                                            || loanCalc?.tenor 
                                             || 12,
                                             10
                                         );
@@ -2474,10 +2474,10 @@ const BNPLLoanDetails = () => {
                         (pickNum(ld?.insuranceFee, 0) + pickNum(ld?.managementFee, 0) + pickNum(ld?.legalFee, 0))
                     );
                     const initialDepositWithFees = pickNum(
-                        ld?.depositAmount,
-                        ld?.down_payment,
-                        loanCalc?.down_payment
-                    );
+                            ld?.depositAmount,
+                            ld?.down_payment,
+                            loanCalc?.down_payment
+                        );
                     // Bundle price (before admin fees) — used to derive deposit % when not stored
                     const baseDepositFromSnap = pickNum(ld?.baseDepositAmount);
                     const bundlePriceApprox =
@@ -2542,7 +2542,7 @@ const BNPLLoanDetails = () => {
                         DEFAULT_BNPL_INTEREST_RATE_PERCENT;
                     // Prefer application / snapshot tenor — mono row can be wrong (e.g. default 12)
                     const tenor = Number(
-                        ld?.tenor ??
+                            ld?.tenor ??
                             ld?.repayment_duration ??
                             loanApp?.repayment_duration ??
                             loanCalc?.repayment_duration ??
@@ -2624,13 +2624,13 @@ const BNPLLoanDetails = () => {
                                 label: depositLabelPct
                                     ? `Initial Deposit (${depositLabelPct}) + Total Administrative Fees`
                                     : 'Initial Deposit + Total Administrative Fees',
-                                value: initialDepositWithFees,
-                            },
-                            { label: 'Total Loan Amount', value: totalLoanAmount },
+                            value: initialDepositWithFees,
+                        },
+                        { label: 'Total Loan Amount', value: totalLoanAmount },
                             { label: `Total Interest Amount (${formatInterestRatePercent(interestRatePercent)} × ${tenor} mo)`, value: totalInterestAmount },
-                            { label: 'Total Repayment Amount', value: totalRepaymentAmount },
-                            { label: 'Monthly Repayment Amount', value: monthlyRepaymentAmount },
-                        ];
+                        { label: 'Total Repayment Amount', value: totalRepaymentAmount },
+                        { label: 'Monthly Repayment Amount', value: monthlyRepaymentAmount },
+                    ];
                     const loanSummaryTitle = isCounterOfferPending
                         ? 'Your Original Choice'
                         : isPartnerFinancing
@@ -2843,8 +2843,16 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
-                {/* Mono Direct Debit — automatic repayments */}
+                {/* Mono Direct Debit — only for Manual review credit-check customers (not Connect-your-bank / partner). */}
                 {(() => {
+                    const creditMethod = String(
+                        order?.credit_check_method
+                        || loanApp?.credit_check_method
+                        || ''
+                    ).toLowerCase();
+                    if (creditMethod !== 'manual') {
+                        return null;
+                    }
                     const monoCalculationId = order.mono_calculation_id
                         || loanApp?.mono_loan_calculation
                         || loanApp?.mono?.id;
@@ -3230,6 +3238,7 @@ const BNPLLoanDetails = () => {
             <BNPLPaymentModal
                 installment={selectedInstallment}
                 monoDebitMandate={orderData?.mono_debit_mandate}
+                creditCheckMethod={orderData?.credit_check_method || orderData?.loan_application?.credit_check_method}
                 isOpen={showPaymentModal}
                 onClose={() => {
                     setShowPaymentModal(false);
