@@ -200,7 +200,15 @@ const BNPLLoanDetails = () => {
                     });
                     
                     if (historyResponse.data.status === 'success' && historyResponse.data.data) {
-                        setInstallmentsWithHistory(historyResponse.data.data);
+                        const monoId =
+                            orderDetails.mono_calculation_id
+                            || orderDetails.loan_application?.mono_loan_calculation
+                            || orderDetails.application?.mono_loan_calculation
+                            || orderDetails.loan_application?.mono?.id
+                            || orderDetails.application?.mono?.id;
+                        setInstallmentsWithHistory(
+                            scopeInstallmentHistoryToLoan(historyResponse.data.data, monoId)
+                        );
                     }
                 } catch (historyErr) {
                     console.log('Could not fetch installments with history:', historyErr);
@@ -371,10 +379,15 @@ const BNPLLoanDetails = () => {
                     });
                     
                     if (historyResponse.data.status === 'success' && historyResponse.data.data) {
-                        setInstallmentsWithHistory(historyResponse.data.data);
+                        const monoId =
+                            appData.mono_loan_calculation
+                            || appData.mono_calculation_id
+                            || appData.mono?.id;
+                        const scoped = scopeInstallmentHistoryToLoan(historyResponse.data.data, monoId);
+                        setInstallmentsWithHistory(scoped);
                         if (repaymentSchedule.length === 0) {
-                            const currentMonth = historyResponse.data.data.current_month || [];
-                            const history = historyResponse.data.data.history || [];
+                            const currentMonth = scoped.current_month || [];
+                            const history = scoped.history || [];
                             repaymentSchedule = [...currentMonth, ...history].sort((a, b) => {
                                 const dateA = new Date(a.payment_date || a.due_date);
                                 const dateB = new Date(b.payment_date || b.due_date);
@@ -965,6 +978,74 @@ const BNPLLoanDetails = () => {
         return parseFloat(String(amount).replace(/,/g, '')) || 0;
     };
 
+    const isInstallmentPaid = (inst) => {
+        const status = String(inst?.status || inst?.computed_status || inst?.payment_status || '').toLowerCase();
+        return status === 'paid' || status === 'completed' || status === 'success';
+    };
+
+    const isInstallmentDueInCurrentMonth = (inst) => {
+        const raw = inst?.due_date || inst?.payment_date || inst?.dueDate || inst?.paymentDate;
+        if (!raw) return false;
+        const due = new Date(raw);
+        if (Number.isNaN(due.getTime())) return false;
+        const now = new Date();
+        return due.getFullYear() === now.getFullYear() && due.getMonth() === now.getMonth();
+    };
+
+    const isInstallmentOverdue = (inst) => {
+        if (isInstallmentPaid(inst)) return false;
+        if (inst?.is_overdue === true) return true;
+        const raw = inst?.due_date || inst?.payment_date || inst?.dueDate || inst?.paymentDate;
+        if (!raw) return false;
+        const due = new Date(raw);
+        if (Number.isNaN(due.getTime())) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+        return due < today;
+    };
+
+    /** /installments/with-history is account-wide — keep only this loan's mono calculation. */
+    const scopeInstallmentHistoryToLoan = (data, monoCalculationId) => {
+        if (!data || typeof data !== 'object') return data;
+        const monoId = Number(monoCalculationId);
+        if (!Number.isFinite(monoId) || monoId <= 0) {
+            return {
+                ...data,
+                current_month: [],
+                history: [],
+                hasOverdue: false,
+                overdueCount: 0,
+                overdueAmount: 0,
+            };
+        }
+        const match = (inst) => Number(inst?.mono_calculation_id) === monoId;
+        const current_month = (Array.isArray(data.current_month) ? data.current_month : []).filter(match);
+        const history = (Array.isArray(data.history) ? data.history : []).filter(match);
+        const overdue = [...current_month, ...history].filter(isInstallmentOverdue);
+        return {
+            ...data,
+            current_month,
+            history,
+            hasOverdue: overdue.length > 0,
+            overdueCount: overdue.length,
+            overdueAmount: overdue.reduce(
+                (sum, inst) => sum + parseAmount(inst.amount || inst.payment_amount),
+                0
+            ),
+        };
+    };
+
+    const buildCurrentMonthFromSchedule = (schedule = []) =>
+        (Array.isArray(schedule) ? schedule : [])
+            .filter(isInstallmentDueInCurrentMonth)
+            .slice()
+            .sort((a, b) => {
+                const dateA = new Date(a.due_date || a.payment_date || 0);
+                const dateB = new Date(b.due_date || b.payment_date || 0);
+                return dateA - dateB;
+            });
+
     // Calculate repayment summary from loan calculation and schedule
     const calculateRepaymentSummary = (loanCalc, repaymentSchedule, installmentsWithHistory, loanDetails) => {
         if (!loanCalc && !loanDetails) return null;
@@ -982,49 +1063,39 @@ const BNPLLoanDetails = () => {
                           loanCalc?.total_amount ||
                           loanCalc?.loan_amount
                   );
-        
-        // Calculate paid amount from installments with history
+
+        // Prefer this loan's repayment schedule (never account-wide history).
         let paidAmount = 0;
-        if (installmentsWithHistory?.history) {
-            paidAmount = installmentsWithHistory.history.reduce((sum, inst) => {
-                if (inst.status === 'paid' || inst.payment_status === 'paid') {
-                    return sum + parseAmount(inst.amount || inst.payment_amount);
-                }
-                return sum;
-            }, 0);
-        } else if (repaymentSchedule && repaymentSchedule.length > 0) {
+        if (repaymentSchedule && repaymentSchedule.length > 0) {
             paidAmount = repaymentSchedule.reduce((sum, inst) => {
-                if (inst.status === 'paid' || inst.payment_status === 'paid') {
+                if (isInstallmentPaid(inst)) {
+                    return sum + parseAmount(inst.amount || inst.payment_amount);
+                }
+                return sum;
+            }, 0);
+        } else if (installmentsWithHistory?.history) {
+            paidAmount = installmentsWithHistory.history.reduce((sum, inst) => {
+                if (isInstallmentPaid(inst)) {
                     return sum + parseAmount(inst.amount || inst.payment_amount);
                 }
                 return sum;
             }, 0);
         }
-        
+
         const pendingAmount = totalAmount - paidAmount;
-        
-        // Calculate overdue amount
+
         let overdueAmount = 0;
-        if (installmentsWithHistory?.history) {
-            overdueAmount = installmentsWithHistory.history.reduce((sum, inst) => {
-                const dueDate = new Date(inst.due_date || inst.payment_date);
-                const today = new Date();
-                if ((inst.status === 'pending' || inst.payment_status === 'pending') && dueDate < today) {
-                    return sum + parseAmount(inst.amount || inst.payment_amount);
-                }
-                return sum;
-            }, 0);
-        } else if (repaymentSchedule && repaymentSchedule.length > 0) {
+        if (repaymentSchedule && repaymentSchedule.length > 0) {
             overdueAmount = repaymentSchedule.reduce((sum, inst) => {
-                const dueDate = new Date(inst.due_date || inst.payment_date);
-                const today = new Date();
-                if ((inst.status === 'pending' || inst.payment_status === 'pending') && dueDate < today) {
+                if (isInstallmentOverdue(inst)) {
                     return sum + parseAmount(inst.amount || inst.payment_amount);
                 }
                 return sum;
             }, 0);
+        } else if (installmentsWithHistory) {
+            overdueAmount = parseAmount(installmentsWithHistory.overdueAmount);
         }
-        
+
         return {
             total_amount: totalAmount,
             paid_amount: paidAmount,
@@ -1110,6 +1181,25 @@ const BNPLLoanDetails = () => {
         const ld = order.loan_details;
         const repaymentSchedule = order.repayment_schedule || [];
         const repaymentHistory = order.repayment_history || [];
+        // Prefer this loan's schedule for "current month" — never mix other loans.
+        const currentMonthInstallments = (() => {
+            const fromSchedule = buildCurrentMonthFromSchedule(repaymentSchedule);
+            if (fromSchedule.length > 0) return fromSchedule;
+            return installmentsWithHistory?.current_month || [];
+        })();
+        const loanOverdueInstallments = (repaymentSchedule.length > 0
+            ? repaymentSchedule
+            : [
+                ...(installmentsWithHistory?.current_month || []),
+                ...(installmentsWithHistory?.history || []),
+            ]
+        ).filter(isInstallmentOverdue);
+        const loanHasOverdue = loanOverdueInstallments.length > 0;
+        const loanOverdueCount = loanOverdueInstallments.length;
+        const loanOverdueAmount = loanOverdueInstallments.reduce(
+            (sum, inst) => sum + parseAmount(inst.amount || inst.payment_amount),
+            0
+        );
         
         // Get the correct display status
         const displayStatus = getDisplayStatus(order);
@@ -2716,7 +2806,7 @@ const BNPLLoanDetails = () => {
                 })()}
 
                 {/* Overdue Warning Banner — only after down payment / on real orders */}
-                {showRepaymentUi && installmentsWithHistory?.hasOverdue && (
+                {showRepaymentUi && loanHasOverdue && (
                     <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 mb-6">
                         <div className="flex items-center gap-3">
                             <AlertCircle className="text-red-600" size={24} />
@@ -2725,7 +2815,7 @@ const BNPLLoanDetails = () => {
                                     Overdue Payments Detected
                                 </h3>
                                 <p className="text-sm text-red-700">
-                                    You have {installmentsWithHistory.overdueCount || 0} overdue installment(s) totaling {formatCurrency(installmentsWithHistory.overdueAmount || 0)}. Please pay immediately to avoid penalties.
+                                    You have {loanOverdueCount} overdue installment(s) totaling {formatCurrency(loanOverdueAmount)}. Please pay immediately to avoid penalties.
                                 </p>
                             </div>
                         </div>
@@ -2768,15 +2858,15 @@ const BNPLLoanDetails = () => {
                     </div>
                 )}
 
-                {/* Current Month Installments */}
-                {showRepaymentUi && installmentsWithHistory?.current_month && installmentsWithHistory.current_month.length > 0 && (
+                {/* Current Month Installments — this loan only */}
+                {showRepaymentUi && currentMonthInstallments.length > 0 && (
                     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-6 mb-6">
                         <div className="flex items-center gap-3 mb-4">
                             <Clock className="text-[#273e8e]" size={24} />
                             <h3 className="text-xl font-semibold text-gray-800">Current Month Installments</h3>
                         </div>
                         <div className="space-y-3">
-                            {installmentsWithHistory.current_month.map((installment, index) => {
+                            {currentMonthInstallments.map((installment, index) => {
                                 const isOverdue = installment.is_overdue || (new Date(installment.payment_date || installment.due_date) < new Date() && installment.status !== 'paid');
                                 return (
                                     <div
@@ -3268,7 +3358,15 @@ const BNPLLoanDetails = () => {
                             }
                         }).then(response => {
                             if (response.data.status === 'success' && response.data.data) {
-                                setInstallmentsWithHistory(response.data.data);
+                                const monoId =
+                                    orderData?.mono_calculation_id
+                                    || orderData?.loan_application?.mono_loan_calculation
+                                    || orderData?.application?.mono_loan_calculation
+                                    || orderData?.loan_application?.mono?.id
+                                    || orderData?.application?.mono?.id;
+                                setInstallmentsWithHistory(
+                                    scopeInstallmentHistoryToLoan(response.data.data, monoId)
+                                );
                             }
                         }).catch(err => {
                             console.log('Could not refresh installments with history:', err);
