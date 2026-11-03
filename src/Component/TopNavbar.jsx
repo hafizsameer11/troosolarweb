@@ -109,10 +109,22 @@ const TopNavbar = () => {
   return (
     <div>
       <header
-        className={`flex gap-3 items-center h-[90px] justify-end px-5 sm:pr-10 py-5 ${
+        className={`flex gap-3 items-center h-[90px] justify-between px-5 sm:pr-10 py-5 ${
           changeBg ? "bg-[#273e8e]" : "bg-white"
         }`}
       >
+        <a
+          href="https://troosolar.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`text-sm sm:text-base font-semibold underline-offset-2 hover:underline whitespace-nowrap ${
+            changeBg ? "text-white" : "text-[#273e8e]"
+          }`}
+        >
+          Visit Website
+        </a>
+
+        <div className="flex gap-3 items-center">
         {/* Notifications */}
         <button
           onClick={handleNotificationsClick}
@@ -178,6 +190,7 @@ const TopNavbar = () => {
         >
           {name}
         </p>
+        </div>
       </header>
     </div>
   );

@@ -6050,7 +6050,17 @@ const BuyNowFlow = () => {
             {/* Navbar Placeholder */}
             <div className="bg-white shadow-sm p-4 sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto flex justify-between items-center">
-                    <div className="font-bold text-xl text-[#273e8e]">Troosolar</div>
+                    <div className="flex items-center gap-4 sm:gap-6 min-w-0">
+                        <div className="font-bold text-xl text-[#273e8e]">Troosolar</div>
+                        <a
+                            href="https://troosolar.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm sm:text-base font-semibold text-[#273e8e] hover:underline whitespace-nowrap"
+                        >
+                            Visit Website
+                        </a>
+                    </div>
                     <button onClick={() => navigate('/')} className="text-gray-600 hover:text-[#273e8e]">
                         Exit Application
                     </button>
