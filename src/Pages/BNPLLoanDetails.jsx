@@ -33,6 +33,11 @@ import {
 import Loading from '../Component/Loading';
 import BNPLPaymentModal from '../Component/BNPLPaymentModal';
 import RepaymentCalendar from '../Component/RepaymentCalendar';
+import {
+    fetchUserMonoAccount,
+    linkMonoAccountFromCode,
+    openMonoConnectWidget,
+} from '../utils/monoConnect';
 
 /** Default BNPL interest rate (%). Used for Total Interest when backend does not provide one. Change as needed. */
 const DEFAULT_BNPL_INTEREST_RATE_PERCENT = 4;
@@ -80,6 +85,83 @@ const BNPLLoanDetails = () => {
     const [bookingInstallationDate, setBookingInstallationDate] = useState('');
     const [processingBookInstallation, setProcessingBookInstallation] = useState(false);
     const [processingMandateSetup, setProcessingMandateSetup] = useState(false);
+    const [mandateMonoAccount, setMandateMonoAccount] = useState({ linked: false });
+    const [loadingMandateMonoAccount, setLoadingMandateMonoAccount] = useState(false);
+    const [linkingMandateBank, setLinkingMandateBank] = useState(false);
+    const [mandateMonoInstance, setMandateMonoInstance] = useState(null);
+
+    const loadMandateMonoAccount = async () => {
+        setLoadingMandateMonoAccount(true);
+        try {
+            const data = await fetchUserMonoAccount();
+            setMandateMonoAccount(data || { linked: false });
+        } catch {
+            setMandateMonoAccount({ linked: false });
+        } finally {
+            setLoadingMandateMonoAccount(false);
+        }
+    };
+
+    const handleLinkBankForMandate = async () => {
+        let user = null;
+        try {
+            user = JSON.parse(localStorage.getItem('user') || localStorage.getItem('user_info') || 'null');
+        } catch {
+            user = null;
+        }
+        const customerName =
+            [user?.first_name, user?.sur_name || user?.surname || user?.last_name].filter(Boolean).join(' ')
+            || user?.name
+            || user?.full_name
+            || user?.user?.name
+            || '';
+        const customerEmail = user?.email || user?.user?.email || user?.data?.email || '';
+
+        setLinkingMandateBank(true);
+        try {
+            await openMonoConnectWidget({
+                customerName,
+                customerEmail,
+                referencePrefix: 'troosolar_mandate_link',
+                existingInstance: mandateMonoInstance,
+                onInstance: setMandateMonoInstance,
+                onSuccess: async (payload) => {
+                    const code = typeof payload === 'string' ? payload : (payload?.code || payload?.auth_code);
+                    if (!code) {
+                        alert('Mono did not return an authorization code.');
+                        setLinkingMandateBank(false);
+                        return;
+                    }
+                    try {
+                        const linked = await linkMonoAccountFromCode(code);
+                        setMandateMonoAccount({
+                            linked: true,
+                            bank_label: linked?.bank_label,
+                            mono_account_id: linked?.mono_account_id,
+                            linked_at: linked?.linked_at,
+                        });
+                        alert('Bank account linked. You can now set up automatic repayments.');
+                    } catch (err) {
+                        alert(err?.response?.data?.message || err.message || 'Failed to link bank account.');
+                    } finally {
+                        setLinkingMandateBank(false);
+                    }
+                },
+                onClose: () => setLinkingMandateBank(false),
+                prepareCamera: true,
+            });
+        } catch (err) {
+            alert(err.message || 'Failed to open bank connection.');
+            setLinkingMandateBank(false);
+        }
+    };
+
+    useEffect(() => {
+        // Load Mono account for manual Direct Debit setup on loan detail pages.
+        if (!id) return;
+        loadMandateMonoAccount();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id]);
 
     const handleSetupMonoMandate = async (monoCalculationId, loanApplicationId) => {
         if (!monoCalculationId) {
@@ -2987,14 +3069,49 @@ const BNPLLoanDetails = () => {
                                     )}
                                 </div>
                             ) : (
-                                <button
-                                    type="button"
-                                    disabled={processingMandateSetup}
-                                    onClick={() => handleSetupMonoMandate(monoCalculationId, loanApp?.id)}
-                                    className="w-full sm:w-auto px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] disabled:opacity-50"
-                                >
-                                    {processingMandateSetup ? 'Starting...' : 'Set up automatic repayments'}
-                                </button>
+                                <div className="space-y-3">
+                                    {loadingMandateMonoAccount ? (
+                                        <p className="text-sm text-gray-500">Checking linked bank account...</p>
+                                    ) : mandateMonoAccount?.linked ? (
+                                        <>
+                                            <p className="text-sm text-gray-600">
+                                                Linked bank: <strong>{mandateMonoAccount.bank_label || 'Mono account'}</strong>
+                                            </p>
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                <button
+                                                    type="button"
+                                                    disabled={processingMandateSetup}
+                                                    onClick={() => handleSetupMonoMandate(monoCalculationId, loanApp?.id)}
+                                                    className="w-full sm:w-auto px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] disabled:opacity-50"
+                                                >
+                                                    {processingMandateSetup ? 'Starting...' : 'Set up automatic repayments'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={linkingMandateBank}
+                                                    onClick={handleLinkBankForMandate}
+                                                    className="w-full sm:w-auto px-6 py-3 border border-[#273e8e] text-[#273e8e] font-semibold rounded-lg hover:bg-blue-50 disabled:opacity-50"
+                                                >
+                                                    {linkingMandateBank ? 'Opening Mono...' : 'Change linked bank'}
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                                Manual review customers need to link a bank account with Mono before automatic repayments can be set up.
+                                            </p>
+                                            <button
+                                                type="button"
+                                                disabled={linkingMandateBank}
+                                                onClick={handleLinkBankForMandate}
+                                                className="w-full sm:w-auto px-6 py-3 bg-[#273e8e] text-white font-semibold rounded-lg hover:bg-[#1a2b6b] disabled:opacity-50"
+                                            >
+                                                {linkingMandateBank ? 'Opening Mono...' : 'Link bank account for auto debit'}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             )}
                         </div>
                     );
