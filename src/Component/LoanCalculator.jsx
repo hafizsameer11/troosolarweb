@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
+import html2pdf from 'html2pdf.js';
 import { Calculator, ArrowRight, Download, Printer } from 'lucide-react';
 import API from '../config/api.config';
 import fullLogo from '../assets/FUll Logo-01.png';
@@ -45,6 +46,7 @@ const LoanCalculator = ({
   const [standaloneAmount, setStandaloneAmount] = useState('');
   const [touched, setTouched] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState('');
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -221,17 +223,20 @@ const LoanCalculator = ({
     ];
   };
 
-  const downloadBlob = (content, filename, mimeType) => {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  };
+  const waitForImages = (root) =>
+    Promise.all(
+      Array.from(root?.querySelectorAll?.('img') || []).map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) {
+              resolve();
+              return;
+            }
+            img.addEventListener('load', () => resolve(), { once: true });
+            img.addEventListener('error', () => resolve(), { once: true });
+          })
+      )
+    );
 
   const resolveLogoDataUrl = async () => {
     if (logoDataUrl) return logoDataUrl;
@@ -345,9 +350,50 @@ const LoanCalculator = ({
   };
 
   const handleDownloadLoanSummary = async () => {
-    if (grandTotal <= 0) return;
-    const logo = await resolveLogoDataUrl();
-    downloadBlob(buildStyledSummaryHtml(logo), `troosolar-loan-summary-${Date.now()}.html`, 'text/html;charset=utf-8');
+    if (grandTotal <= 0 || exportingPdf) return;
+    setExportingPdf(true);
+    let host = null;
+    try {
+      const logo = await resolveLogoDataUrl();
+      const html = buildStyledSummaryHtml(logo);
+      const parsed = new DOMParser().parseFromString(html, 'text/html');
+      const sourceCard = parsed.querySelector('.wrap') || parsed.body;
+
+      host = document.createElement('div');
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText =
+        'position:fixed;left:-10000px;top:0;width:680px;background:#ffffff;z-index:-1;pointer-events:none;';
+      host.appendChild(document.importNode(sourceCard, true));
+      document.body.appendChild(host);
+
+      await waitForImages(host);
+      // Let layout settle before canvas capture.
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 80)));
+
+      const target = host.querySelector('.wrap') || host.firstElementChild || host;
+      await html2pdf()
+        .set({
+          margin: [8, 8, 8, 8],
+          filename: `troosolar-loan-summary-${Date.now()}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] },
+        })
+        .from(target)
+        .save();
+    } catch (err) {
+      console.error('Loan summary PDF export failed:', err);
+      alert('Could not download PDF. Please try again or use Print.');
+    } finally {
+      if (host?.parentNode) host.parentNode.removeChild(host);
+      setExportingPdf(false);
+    }
   };
 
   const handlePrintSummary = async () => {
@@ -518,10 +564,11 @@ const LoanCalculator = ({
                     <button
                       type="button"
                       onClick={handleDownloadLoanSummary}
-                      className="inline-flex items-center gap-1.5 border border-[#273e8e] text-[#273e8e] px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[#273e8e]/5 transition-colors"
+                      disabled={exportingPdf}
+                      className="inline-flex items-center gap-1.5 border border-[#273e8e] text-[#273e8e] px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[#273e8e]/5 transition-colors disabled:opacity-60"
                     >
                       <Download size={14} />
-                      Download
+                      {exportingPdf ? 'Preparing PDF…' : 'Download PDF'}
                     </button>
                     <button
                       type="button"
@@ -685,10 +732,11 @@ const LoanCalculator = ({
               <button
                 type="button"
                 onClick={handleDownloadLoanSummary}
-                className="inline-flex items-center gap-2 bg-[#273e8e] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#1a2b6b] transition-colors"
+                disabled={exportingPdf}
+                className="inline-flex items-center gap-2 bg-[#273e8e] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#1a2b6b] transition-colors disabled:opacity-60"
               >
                 <Download size={16} />
-                Download Loan Summary
+                {exportingPdf ? 'Preparing PDF…' : 'Download PDF'}
               </button>
               <button
                 type="button"
