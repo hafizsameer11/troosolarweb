@@ -13,6 +13,14 @@ const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
+/** Display-only thousand separators — calculations always strip non-digits. */
+const formatAmountInputDisplay = (raw) => {
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  const normalized = digits.replace(/^0+(?=\d)/, '');
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
 const LoanCalculator = ({
   totalAmount: totalAmountProp,
   /** Catalog/bundle price (order-list Sub-Total). Insurance is always 3% of this, not grand total. */
@@ -345,12 +353,61 @@ const LoanCalculator = ({
   const handlePrintSummary = async () => {
     if (grandTotal <= 0) return;
     const logo = await resolveLogoDataUrl();
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1000');
-    if (!printWindow) return;
-    printWindow.document.write(buildStyledSummaryHtml(logo));
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    const html = buildStyledSummaryHtml(logo);
+
+    // Hidden iframe is more reliable than window.open (avoids blank print / noopener issues).
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('title', 'Troosolar loan summary print');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;';
+    document.body.appendChild(iframe);
+
+    const frameWindow = iframe.contentWindow;
+    const frameDoc = frameWindow?.document;
+    if (!frameDoc || !frameWindow) {
+      document.body.removeChild(iframe);
+      return;
+    }
+
+    frameDoc.open();
+    frameDoc.write(html);
+    frameDoc.close();
+
+    const cleanup = () => {
+      try {
+        if (iframe.parentNode) document.body.removeChild(iframe);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const doPrint = () => {
+      try {
+        frameWindow.focus();
+        frameWindow.print();
+      } finally {
+        // Keep iframe briefly so the print dialog can read the document.
+        setTimeout(cleanup, 1500);
+      }
+    };
+
+    const images = Array.from(frameDoc.images || []);
+    if (images.length === 0) {
+      setTimeout(doPrint, 200);
+      return;
+    }
+
+    let settled = 0;
+    const onSettled = () => {
+      settled += 1;
+      if (settled >= images.length) setTimeout(doPrint, 150);
+    };
+    images.forEach((img) => {
+      if (img.complete) onSettled();
+      else {
+        img.addEventListener('load', onSettled, { once: true });
+        img.addEventListener('error', onSettled, { once: true });
+      }
+    });
   };
 
   if (configLoading && isStandalone) {
@@ -392,9 +449,9 @@ const LoanCalculator = ({
           <input
             type="text"
             inputMode="numeric"
-            placeholder="e.g. 3000000"
+            placeholder="e.g. 3,000,000"
             value={standaloneAmount}
-            onChange={(e) => setStandaloneAmount(e.target.value)}
+            onChange={(e) => setStandaloneAmount(formatAmountInputDisplay(e.target.value))}
             onBlur={() => setTouched(true)}
             className="w-full max-w-xs px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#273e8e] focus:border-[#273e8e] outline-none"
           />
