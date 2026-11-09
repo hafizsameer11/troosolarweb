@@ -14,12 +14,36 @@ const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
-/** Display-only thousand separators — calculations always strip non-digits. */
+const LOAN_CALC_STORAGE_KEY = 'troosolar_loan_calculator_standalone';
+
+/** Display-only thousand separators; allows up to 2 decimal places. */
 const formatAmountInputDisplay = (raw) => {
-  const digits = String(raw ?? '').replace(/\D/g, '');
-  if (!digits) return '';
-  const normalized = digits.replace(/^0+(?=\d)/, '');
-  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const cleaned = String(raw ?? '').replace(/[^\d.]/g, '');
+  if (!cleaned) return '';
+
+  const dotIndex = cleaned.indexOf('.');
+  const hasDot = dotIndex !== -1;
+  let intDigits = hasDot ? cleaned.slice(0, dotIndex) : cleaned;
+  let decDigits = hasDot ? cleaned.slice(dotIndex + 1).replace(/\./g, '').slice(0, 2) : '';
+
+  intDigits = intDigits.replace(/^0+(?=\d)/, '');
+  const intFormatted = intDigits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+  if (hasDot) {
+    return `${intFormatted || '0'}.${decDigits}`;
+  }
+  return intFormatted;
+};
+
+const readStoredLoanCalc = () => {
+  try {
+    const raw = sessionStorage.getItem(LOAN_CALC_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 };
 
 const LoanCalculator = ({
@@ -41,10 +65,18 @@ const LoanCalculator = ({
   const amountIncludesVat = !isStandalone;
   const breakdownRef = useRef(null);
 
+  const storedStandalone = isStandalone ? readStoredLoanCalc() : null;
   const [loanConfig, setLoanConfig] = useState(loanConfigProp || null);
   const [configLoading, setConfigLoading] = useState(isStandalone);
-  const [standaloneAmount, setStandaloneAmount] = useState('');
-  const [touched, setTouched] = useState(false);
+  const [standaloneAmount, setStandaloneAmount] = useState(() => {
+    if (!isStandalone) return '';
+    const saved = storedStandalone?.amount;
+    return typeof saved === 'string' ? saved : '';
+  });
+  const [touched, setTouched] = useState(() => {
+    if (!isStandalone) return false;
+    return Boolean(storedStandalone?.amount);
+  });
   const [logoDataUrl, setLogoDataUrl] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
 
@@ -104,14 +136,18 @@ const LoanCalculator = ({
     return raw.filter((p) => !excludedDeposits.has(p)).sort((a, b) => a - b);
   }, [config?.down_payment_options, minDepositPercent, maxDepositPercent, excludedDeposits]);
 
-  const [depositPercent, setDepositPercent] = useState(
-    Number.isFinite(Number(initialDepositPercent)) ? Number(initialDepositPercent) : (downPaymentOptions[0] ?? minDepositPercent)
-  );
-  const [tenor, setTenor] = useState(
-    Number.isFinite(Number(initialTenor)) && Number(initialTenor) > 0
-      ? Number(initialTenor)
-      : (allowedTenors.includes(12) ? 12 : allowedTenors[0] || 12)
-  );
+  const [depositPercent, setDepositPercent] = useState(() => {
+    if (Number.isFinite(Number(initialDepositPercent))) return Number(initialDepositPercent);
+    const saved = storedStandalone?.depositPercent;
+    if (isStandalone && Number.isFinite(Number(saved))) return Number(saved);
+    return downPaymentOptions[0] ?? minDepositPercent;
+  });
+  const [tenor, setTenor] = useState(() => {
+    if (Number.isFinite(Number(initialTenor)) && Number(initialTenor) > 0) return Number(initialTenor);
+    const saved = storedStandalone?.tenor;
+    if (isStandalone && Number.isFinite(Number(saved)) && Number(saved) > 0) return Number(saved);
+    return allowedTenors.includes(12) ? 12 : allowedTenors[0] || 12;
+  });
   const vatPercent = Number(config?.vat_percentage ?? 7.5);
   const insurancePercent = Number(config?.insurance_fee_percentage ?? 3);
   const managementPercent = Number(config?.management_fee_percentage ?? 1);
@@ -181,6 +217,23 @@ const LoanCalculator = ({
       setDepositPercent(downPaymentOptions[0]);
     }
   }, [downPaymentOptions, depositPercent]);
+
+  // Persist Tools / standalone calculator inputs across remounts (desktop ↔ mobile resize).
+  useEffect(() => {
+    if (!isStandalone) return;
+    try {
+      sessionStorage.setItem(
+        LOAN_CALC_STORAGE_KEY,
+        JSON.stringify({
+          amount: standaloneAmount,
+          depositPercent,
+          tenor,
+        })
+      );
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [isStandalone, standaloneAmount, depositPercent, tenor]);
 
   const buildSummaryRows = () => {
     if (!isStandalone) {
@@ -494,8 +547,8 @@ const LoanCalculator = ({
           </label>
           <input
             type="text"
-            inputMode="numeric"
-            placeholder="e.g. 3,000,000"
+            inputMode="decimal"
+            placeholder="e.g. 3,000,000.50"
             value={standaloneAmount}
             onChange={(e) => setStandaloneAmount(formatAmountInputDisplay(e.target.value))}
             onBlur={() => setTouched(true)}
