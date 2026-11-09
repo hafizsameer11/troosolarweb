@@ -6377,18 +6377,20 @@ const BNPLFlow = () => {
                 formDataToSend.append('credit_check_fee_reference', String(creditCheckFeeReference));
             }
 
-            // Files — required for partner path (collected on Final Application) and Troosolar manual/failed Mono
-            if (financingPath === 'partner') {
+            // Files — required for partner path (Final Application) and Troosolar manual / failed-Mono path.
+            // Fee waiver (skipCreditCheckFee) must NOT skip document upload.
+            const needsManualDocs =
+                financingPath === 'partner'
+                || creditMethod === 'manual'
+                || formData.creditCheckMethod === 'manual'
+                || monoFailed;
+            if (needsManualDocs) {
                 if (!formData.bankStatement || !formData.livePhoto) {
-                    alert("Bank statement and a live selfie or passport photograph are required for Partner Financing. Please add them on the Final Application form.");
-                    setLoading(false);
-                    return;
-                }
-                formDataToSend.append('bank_statement', formData.bankStatement);
-                formDataToSend.append('live_photo', formData.livePhoto);
-            } else if ((formData.creditCheckMethod === 'manual' || monoFailed) && !skipCreditCheckFee) {
-                if (!formData.bankStatement || !formData.livePhoto) {
-                    alert("Bank statement and live photo are required for manual credit check. Please upload both documents.");
+                    alert(
+                        financingPath === 'partner'
+                            ? "Bank statement and a live selfie or passport photograph are required for Partner Financing. Please add them on the Final Application form."
+                            : "Bank statement and live photo are required for manual credit check. Please upload both documents."
+                    );
                     setLoading(false);
                     return;
                 }
@@ -6429,9 +6431,20 @@ const BNPLFlow = () => {
             }
         } catch (error) {
             console.error("Application Submit Error:", error);
-            const errorMessage = error.response?.data?.message || 
-                                (error.response?.data?.errors ? JSON.stringify(error.response.data.errors) : null) ||
-                                "Failed to submit application. Please check all required fields.";
+            const fieldErrors = error.response?.data?.errors;
+            let errorMessage = error.response?.data?.message
+                || "Failed to submit application. Please check all required fields.";
+            if (fieldErrors && typeof fieldErrors === 'object') {
+                const details = Object.entries(fieldErrors)
+                    .flatMap(([field, msgs]) => {
+                        const list = Array.isArray(msgs) ? msgs : [msgs];
+                        return list.map((msg) => `${field}: ${msg}`);
+                    })
+                    .filter(Boolean);
+                if (details.length > 0) {
+                    errorMessage = `${errorMessage}\n\n${details.join('\n')}`;
+                }
+            }
             alert(errorMessage);
         } finally {
             setLoading(false);
