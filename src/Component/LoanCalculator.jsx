@@ -658,7 +658,7 @@ const LoanCalculator = ({
                     <span className="font-medium">{formatCurrency(grandTotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm border-b border-gray-200 pb-2">
-                    <span className="text-gray-500">Initial Deposit {depositPercent}%</span>
+                    <span className="text-gray-500">Initial Deposit ({depositPercent}%)</span>
                     <span className="font-medium text-red-600">−{formatCurrency(depositAmount)}</span>
                   </div>
                   <div className="flex justify-between text-sm border-b border-gray-200 pb-2">
