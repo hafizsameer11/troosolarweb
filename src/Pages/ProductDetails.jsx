@@ -209,10 +209,28 @@ const ImageSwiper = ({ images, productTitle, baseUrl }) => {
 const mapApiProductToDetails = (p) => {
   if (!p) return null;
 
-  const image =
+  const featured =
     p?.featured_image_url ||
     p?.featured_image ||
-    p?.images?.[0]?.image ||
+    null;
+
+  const galleryOnly = safeArray(p?.images)
+    .map((i) => i?.image_url || i?.image)
+    .filter(Boolean);
+
+  // Featured image must lead the slide; gallery alone used to hide it when extras existed.
+  const slides = [];
+  const seen = new Set();
+  [featured, ...galleryOnly].forEach((src) => {
+    if (!src) return;
+    const key = String(src).trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    slides.push(key);
+  });
+
+  const image =
+    slides[0] ||
     assets?.placeholderProduct ||
     "/placeholder-product.png";
 
@@ -251,9 +269,7 @@ const mapApiProductToDetails = (p) => {
       .filter(Boolean),
     description: String(p?.description || "").trim(),
     specifications: parseSpecificationItems(p?.specifications),
-    gallery: safeArray(p?.images)
-      .map((i) => i?.image)
-      .filter(Boolean),
+    gallery: slides,
     stockText: `${current}/${total}`,
     stockQty: current,
     stockPct,
