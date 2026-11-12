@@ -13,6 +13,7 @@ import {
 import { loginPathWithReturn } from '../../utils/authRedirect';
 import { persistSessionFromCartAccess } from '../../utils/cartAccessAuth';
 import ProductPromoBadges from '../../Component/ProductPromoBadges';
+import BundleImageSwiper, { getBundleGalleryImages } from '../../Component/BundleImageSwiper';
 import GridPagination from '../../Component/GridPagination';
 import ProductCategoryGrid from '../../Component/ProductCategoryGrid';
 import { filterBillableInvoiceFees, dedupeFeeRowsByKind } from '../../utils/invoiceFees';
@@ -2960,18 +2961,13 @@ const BNPLFlow = () => {
                         {/* Left Column - Main Content */}
                         <div className="flex-1 min-w-0">
                             <div className="bg-white w-full border border-gray-200 rounded-xl mt-3 shadow-sm overflow-hidden">
-                                {/* Image */}
-                                <div className="relative h-[350px] bg-[#F8FAFC] m-3 rounded-lg flex justify-center items-center overflow-hidden">
-                                    <img
-                                        src={getBundleImage(bundle)}
-                                        alt={bundle.title || bundle.name || 'Bundle'}
-                                        className="max-h-[80%] object-contain"
-                                        onError={(e) => {
-                                            // Prevent infinite loop - only set fallback if not already set
-                                            if (e.target.src && !e.target.src.includes(FALLBACK_IMAGE)) {
-                                                e.target.src = FALLBACK_IMAGE;
-                                            }
-                                        }}
+                                {/* Image gallery */}
+                                <div className="m-3">
+                                    <BundleImageSwiper
+                                        images={getBundleGalleryImages(bundle, FALLBACK_IMAGE)}
+                                        title={bundle.title || bundle.name || 'Bundle'}
+                                        className="h-[350px]"
+                                        fallback={FALLBACK_IMAGE}
                                     />
                                 </div>
 
@@ -3174,17 +3170,13 @@ const BNPLFlow = () => {
                     {/* Mobile Layout */}
                     <div className="sm:hidden">
                         <div className="mx-3 mb-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                            {/* Image */}
-                            <div className="relative h-[200px] rounded-xl bg-[#F8FAFC] flex items-center justify-center overflow-hidden">
-                                <img
-                                    src={getBundleImage(bundle)}
-                                    alt={bundle.title || bundle.name || 'Bundle'}
-                                    className="max-h-[80%] object-contain"
-                                    onError={(e) => {
-                                        e.target.src = FALLBACK_IMAGE;
-                                    }}
-                                />
-                            </div>
+                            {/* Image gallery */}
+                            <BundleImageSwiper
+                                images={getBundleGalleryImages(bundle, FALLBACK_IMAGE)}
+                                title={bundle.title || bundle.name || 'Bundle'}
+                                className="h-[200px] rounded-xl"
+                                fallback={FALLBACK_IMAGE}
+                            />
 
                             {/* Title + Price */}
                             <div className="pt-3">
