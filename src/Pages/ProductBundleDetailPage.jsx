@@ -6,9 +6,10 @@ import SideBar from "../Component/SideBar";
 import TopNavbar from "../Component/TopNavbar";
 import { assets } from "../assets/data";
 import API, { BASE_URL } from "../config/api.config";
-import { ChevronLeft, ChevronRight, ShoppingCart } from "lucide-react"; // ← chevron back
+import { ChevronLeft, ShoppingCart } from "lucide-react"; // ← chevron back
 import Loading from "../Component/Loading";
 import ProductPromoBadges from "../Component/ProductPromoBadges";
+import BundleImageSwiper from "../Component/BundleImageSwiper";
 import { ContextApi } from "../Context/AppContext";
 import { bundleBnplPrice } from "../utils/bundlePricing";
 import {
