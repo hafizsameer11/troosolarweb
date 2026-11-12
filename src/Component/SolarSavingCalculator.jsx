@@ -45,15 +45,31 @@ const SolarSavingCalculator = () => {
   const resultRef = useRef(null);
 
   const parseCurrencyInput = (value) =>
-    Number(String(value || "").replace(/,/g, "").replace(/[^\d]/g, "")) || 0;
+    Number(String(value || "").replace(/,/g, "").replace(/[^\d.]/g, "")) || 0;
+  /** Display with thousand separators; keeps up to 2 decimal places (kobo). */
   const formatNumberInput = (value) => {
-    const num = parseCurrencyInput(value);
-    return num > 0 ? num.toLocaleString("en-NG") : "";
+    const cleaned = String(value ?? "").replace(/[^\d.]/g, "");
+    if (!cleaned) return "";
+    const dotIndex = cleaned.indexOf(".");
+    const hasDot = dotIndex !== -1;
+    let intDigits = hasDot ? cleaned.slice(0, dotIndex) : cleaned;
+    let decDigits = hasDot ? cleaned.slice(dotIndex + 1).replace(/\./g, "").slice(0, 2) : "";
+    intDigits = intDigits.replace(/^0+(?=\d)/, "");
+    const intFormatted = intDigits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    if (hasDot) return `${intFormatted || "0"}.${decDigits}`;
+    return intFormatted;
   };
   const onAmountInputChange = (setter) => (e) => {
     const raw = e.target.value || "";
-    const digitsOnly = raw.replace(/[^\d]/g, "");
-    setter(digitsOnly);
+    const cleaned = raw.replace(/[^\d.]/g, "");
+    const dotIndex = cleaned.indexOf(".");
+    if (dotIndex === -1) {
+      setter(cleaned.replace(/^0+(?=\d)/, ""));
+      return;
+    }
+    const intPart = cleaned.slice(0, dotIndex).replace(/^0+(?=\d)/, "");
+    const decPart = cleaned.slice(dotIndex + 1).replace(/\./g, "").slice(0, 2);
+    setter(`${intPart}.${decPart}`);
   };
 
   const generatorSizes = Object.entries(generatorData).map(([value, d]) => ({
@@ -227,7 +243,7 @@ const SolarSavingCalculator = () => {
                   </label>
                   <input
                     type="text"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     placeholder="e.g. 20,000"
                     className="w-full border border-gray-300 rounded-lg px-4 py-4 bg-white outline-none focus:ring-2 focus:ring-[#273e8e] focus:border-[#273e8e]"
                     value={formatNumberInput(monthlyServiceCost)}
@@ -241,7 +257,7 @@ const SolarSavingCalculator = () => {
                   </label>
                   <input
                     type="text"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     placeholder="e.g. 5,000"
                     className="w-full border border-gray-300 rounded-lg px-4 py-4 bg-white outline-none focus:ring-2 focus:ring-[#273e8e] focus:border-[#273e8e]"
                     value={formatNumberInput(monthlyPHCNBill)}
@@ -255,7 +271,7 @@ const SolarSavingCalculator = () => {
                   </label>
                   <input
                     type="text"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     placeholder="e.g. 130,000"
                     className="w-full border border-gray-300 rounded-lg px-4 py-4 bg-white outline-none focus:ring-2 focus:ring-[#273e8e] focus:border-[#273e8e]"
                     value={formatNumberInput(costOfGenerator)}
@@ -376,7 +392,7 @@ const SolarSavingCalculator = () => {
                 </label>
                 <input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   placeholder="e.g. 20,000"
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-3 text-sm outline-none"
                   value={formatNumberInput(monthlyServiceCost)}
@@ -390,7 +406,7 @@ const SolarSavingCalculator = () => {
                 </label>
                 <input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   placeholder="e.g. 5,000"
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-3 text-sm outline-none"
                   value={formatNumberInput(monthlyPHCNBill)}
@@ -404,7 +420,7 @@ const SolarSavingCalculator = () => {
                 </label>
                 <input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   placeholder="e.g. 130,000"
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-3 text-sm outline-none"
                   value={formatNumberInput(costOfGenerator)}
