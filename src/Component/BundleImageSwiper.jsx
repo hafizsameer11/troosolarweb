@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronLeft, ChevronRight, Expand, X } from "lucide-react";
 import { BASE_URL } from "../config/api.config";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
@@ -47,16 +48,13 @@ const touchDistance = (touches) => {
   return Math.hypot(dx, dy);
 };
 
-const ZoomableImage = ({ src, alt, className = "" }) => {
+const ZoomableImage = ({ src, alt, className = "", showMobileHint = true, enableHoverZoom = true }) => {
   const wrapRef = useRef(null);
   const lastTapRef = useRef(0);
   const pinchRef = useRef(null);
   const dragRef = useRef(null);
 
-  // Desktop hover lens
   const [hover, setHover] = useState({ active: false, x: 50, y: 50 });
-
-  // Mobile/touch pan-zoom
   const [touch, setTouch] = useState({ scale: 1, x: 0, y: 0 });
 
   useEffect(() => {
@@ -67,7 +65,7 @@ const ZoomableImage = ({ src, alt, className = "" }) => {
   }, [src]);
 
   const onHoverMove = (e) => {
-    if (touch.scale > 1.01) return;
+    if (!enableHoverZoom || touch.scale > 1.01) return;
     const el = wrapRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -144,13 +142,7 @@ const ZoomableImage = ({ src, alt, className = "" }) => {
       e.preventDefault();
       const dx = e.touches[0].clientX - dragRef.current.startX;
       const dy = e.touches[0].clientY - dragRef.current.startY;
-      setTouch(
-        clampPan(
-          touch.scale,
-          dragRef.current.originX + dx,
-          dragRef.current.originY + dy
-        )
-      );
+      setTouch(clampPan(touch.scale, dragRef.current.originX + dx, dragRef.current.originY + dy));
     }
   };
 
@@ -168,7 +160,7 @@ const ZoomableImage = ({ src, alt, className = "" }) => {
     <div
       ref={wrapRef}
       className={`relative w-full h-full flex items-center justify-center overflow-hidden touch-none select-none ${
-        zoomed ? "cursor-grab active:cursor-grabbing" : "cursor-zoom-in"
+        zoomed ? "cursor-grab active:cursor-grabbing" : enableHoverZoom ? "cursor-zoom-in" : ""
       } ${className}`}
       onMouseEnter={onHoverMove}
       onMouseMove={onHoverMove}
@@ -189,7 +181,7 @@ const ZoomableImage = ({ src, alt, className = "" }) => {
         }}
         draggable={false}
       />
-      {hover.active && !zoomed && (
+      {enableHoverZoom && hover.active && !zoomed && (
         <div
           className="absolute inset-0 pointer-events-none hidden md:block"
           style={{
@@ -201,15 +193,99 @@ const ZoomableImage = ({ src, alt, className = "" }) => {
           aria-hidden
         />
       )}
-      <div className="pointer-events-none absolute bottom-2 left-2 md:hidden rounded-full bg-black/55 px-2.5 py-1 text-[10px] text-white">
-        {zoomed ? "Drag to move · Double-tap to reset" : "Pinch or double-tap to zoom"}
-      </div>
+      {showMobileHint && (
+        <div className="pointer-events-none absolute bottom-2 left-2 md:hidden rounded-full bg-black/55 px-2.5 py-1 text-[10px] text-white">
+          {zoomed ? "Drag to move · Double-tap to reset" : "Pinch or double-tap to zoom"}
+        </div>
+      )}
     </div>
+  );
+};
+
+const MobileImageLightbox = ({ slides, index, title, onClose, onChangeIndex }) => {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] md:hidden bg-black/95 flex flex-col" role="dialog" aria-modal="true">
+      <div className="flex items-center justify-between gap-3 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2">
+        <p className="min-w-0 flex-1 truncate text-sm text-white/90">
+          {title || "Bundle image"}
+          {slides.length > 1 ? ` · ${index + 1}/${slides.length}` : ""}
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded-full bg-white/15 p-2 text-white"
+          aria-label="Close image"
+        >
+          <X size={22} />
+        </button>
+      </div>
+
+      <div className="relative min-h-0 flex-1 mx-1 mb-2">
+        <ZoomableImage
+          key={`lightbox-${slides[index]}`}
+          src={slides[index]}
+          alt={title || "Bundle"}
+          className="rounded-lg bg-black"
+          showMobileHint
+          enableHoverZoom={false}
+        />
+        {slides.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => onChangeIndex((index - 1 + slides.length) % slides.length)}
+              className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow"
+              aria-label="Previous image"
+            >
+              <ChevronLeft size={22} className="text-gray-800" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeIndex((index + 1) % slides.length)}
+              className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow"
+              aria-label="Next image"
+            >
+              <ChevronRight size={22} className="text-gray-800" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {slides.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {slides.map((src, idx) => (
+            <button
+              key={`${src}-lb-${idx}`}
+              type="button"
+              onClick={() => onChangeIndex(idx)}
+              className={`shrink-0 h-14 w-14 overflow-hidden rounded-md border-2 bg-white/10 ${
+                idx === index ? "border-white" : "border-transparent opacity-70"
+              }`}
+              aria-label={`View image ${idx + 1}`}
+            >
+              <img src={src} alt="" className="h-full w-full object-contain" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>,
+    document.body
   );
 };
 
 const BundleImageSwiper = ({ images, title, className = "h-[350px]", fallback = "" }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const filtered = Array.isArray(images) ? images.filter(Boolean) : [];
   const slides = filtered.length ? filtered : fallback ? [fallback] : [];
 
@@ -221,7 +297,19 @@ const BundleImageSwiper = ({ images, title, className = "h-[350px]", fallback = 
         key={slides[currentIndex]}
         src={slides[currentIndex]}
         alt={slides.length === 1 ? title || "Bundle" : `${title || "Bundle"} ${currentIndex + 1}`}
+        showMobileHint={false}
       />
+
+      {/* Mobile-only open fullscreen */}
+      <button
+        type="button"
+        onClick={() => setLightboxOpen(true)}
+        className="absolute top-2 right-2 z-20 md:hidden rounded-full bg-black/60 p-2 text-white shadow-md"
+        aria-label="Open image fullscreen"
+      >
+        <Expand size={18} />
+      </button>
+
       {slides.length > 1 && (
         <>
           <button
@@ -248,26 +336,35 @@ const BundleImageSwiper = ({ images, title, className = "h-[350px]", fallback = 
     </div>
   );
 
-  if (slides.length === 1) return frame;
-
   return (
     <div className="w-full">
       {frame}
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-        {slides.map((src, idx) => (
-          <button
-            key={`${src}-${idx}`}
-            type="button"
-            onClick={() => setCurrentIndex(idx)}
-            className={`shrink-0 h-16 w-16 rounded-md overflow-hidden border-2 bg-[#F8FAFC] ${
-              idx === currentIndex ? "border-[#0F3B7A]" : "border-transparent opacity-80 hover:opacity-100"
-            }`}
-            aria-label={`View image ${idx + 1}`}
-          >
-            <img src={src} alt="" className="h-full w-full object-contain" />
-          </button>
-        ))}
-      </div>
+      {slides.length > 1 && (
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {slides.map((src, idx) => (
+            <button
+              key={`${src}-${idx}`}
+              type="button"
+              onClick={() => setCurrentIndex(idx)}
+              className={`shrink-0 h-16 w-16 rounded-md overflow-hidden border-2 bg-[#F8FAFC] ${
+                idx === currentIndex ? "border-[#0F3B7A]" : "border-transparent opacity-80 hover:opacity-100"
+              }`}
+              aria-label={`View image ${idx + 1}`}
+            >
+              <img src={src} alt="" className="h-full w-full object-contain" />
+            </button>
+          ))}
+        </div>
+      )}
+      {lightboxOpen && (
+        <MobileImageLightbox
+          slides={slides}
+          index={currentIndex}
+          title={title}
+          onClose={() => setLightboxOpen(false)}
+          onChangeIndex={setCurrentIndex}
+        />
+      )}
     </div>
   );
 };
