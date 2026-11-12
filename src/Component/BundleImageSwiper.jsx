@@ -1,9 +1,12 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BASE_URL } from "../config/api.config";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
-const ZOOM = 2.4;
+const HOVER_ZOOM = 2.4;
+const TOUCH_ZOOM = 2.6;
+const MIN_PINCH = 1;
+const MAX_PINCH = 4;
 
 const toAbsolute = (path) => {
   if (!path) return "";
@@ -35,49 +38,172 @@ export const getBundleGalleryImages = (bundle, fallback = "") => {
   return gallery;
 };
 
+const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+
+const touchDistance = (touches) => {
+  const [a, b] = touches;
+  const dx = a.clientX - b.clientX;
+  const dy = a.clientY - b.clientY;
+  return Math.hypot(dx, dy);
+};
+
 const ZoomableImage = ({ src, alt, className = "" }) => {
   const wrapRef = useRef(null);
-  const [zoom, setZoom] = useState({ active: false, x: 50, y: 50 });
+  const lastTapRef = useRef(0);
+  const pinchRef = useRef(null);
+  const dragRef = useRef(null);
 
-  const onMove = (e) => {
+  // Desktop hover lens
+  const [hover, setHover] = useState({ active: false, x: 50, y: 50 });
+
+  // Mobile/touch pan-zoom
+  const [touch, setTouch] = useState({ scale: 1, x: 0, y: 0 });
+
+  useEffect(() => {
+    setHover({ active: false, x: 50, y: 50 });
+    setTouch({ scale: 1, x: 0, y: 0 });
+    pinchRef.current = null;
+    dragRef.current = null;
+  }, [src]);
+
+  const onHoverMove = (e) => {
+    if (touch.scale > 1.01) return;
     const el = wrapRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setZoom({ active: true, x, y });
+    setHover({ active: true, x, y });
   };
+
+  const clampPan = (scale, x, y) => {
+    const el = wrapRef.current;
+    if (!el || scale <= 1) return { scale: 1, x: 0, y: 0 };
+    const maxX = ((scale - 1) * el.clientWidth) / 2;
+    const maxY = ((scale - 1) * el.clientHeight) / 2;
+    return {
+      scale,
+      x: clamp(x, -maxX, maxX),
+      y: clamp(y, -maxY, maxY),
+    };
+  };
+
+  const onTouchStart = (e) => {
+    setHover({ active: false, x: 50, y: 50 });
+    if (e.touches.length === 2) {
+      pinchRef.current = {
+        startDist: touchDistance(e.touches),
+        startScale: touch.scale,
+        startX: touch.x,
+        startY: touch.y,
+      };
+      dragRef.current = null;
+      return;
+    }
+    if (e.touches.length === 1) {
+      const now = Date.now();
+      const isDoubleTap = now - lastTapRef.current < 280;
+      lastTapRef.current = now;
+
+      if (isDoubleTap) {
+        e.preventDefault();
+        setTouch((prev) => {
+          if (prev.scale > 1.05) return { scale: 1, x: 0, y: 0 };
+          const el = wrapRef.current;
+          if (!el) return { scale: TOUCH_ZOOM, x: 0, y: 0 };
+          const rect = el.getBoundingClientRect();
+          const t = e.touches[0];
+          const cx = t.clientX - rect.left - rect.width / 2;
+          const cy = t.clientY - rect.top - rect.height / 2;
+          return clampPan(TOUCH_ZOOM, -cx * (TOUCH_ZOOM - 1), -cy * (TOUCH_ZOOM - 1));
+        });
+        dragRef.current = null;
+        return;
+      }
+
+      if (touch.scale > 1.01) {
+        dragRef.current = {
+          startX: e.touches[0].clientX,
+          startY: e.touches[0].clientY,
+          originX: touch.x,
+          originY: touch.y,
+        };
+      }
+    }
+  };
+
+  const onTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      e.preventDefault();
+      const { startDist, startScale, startX, startY } = pinchRef.current;
+      const nextScale = clamp(startScale * (touchDistance(e.touches) / startDist), MIN_PINCH, MAX_PINCH);
+      setTouch(clampPan(nextScale, startX, startY));
+      return;
+    }
+    if (e.touches.length === 1 && dragRef.current && touch.scale > 1.01) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - dragRef.current.startX;
+      const dy = e.touches[0].clientY - dragRef.current.startY;
+      setTouch(
+        clampPan(
+          touch.scale,
+          dragRef.current.originX + dx,
+          dragRef.current.originY + dy
+        )
+      );
+    }
+  };
+
+  const onTouchEnd = (e) => {
+    if (e.touches.length < 2) pinchRef.current = null;
+    if (e.touches.length === 0) {
+      dragRef.current = null;
+      setTouch((prev) => (prev.scale < 1.05 ? { scale: 1, x: 0, y: 0 } : prev));
+    }
+  };
+
+  const zoomed = touch.scale > 1.01;
 
   return (
     <div
       ref={wrapRef}
-      className={`relative w-full h-full flex items-center justify-center overflow-hidden cursor-zoom-in ${className}`}
-      onMouseEnter={onMove}
-      onMouseMove={onMove}
-      onMouseLeave={() => setZoom((z) => ({ ...z, active: false }))}
+      className={`relative w-full h-full flex items-center justify-center overflow-hidden touch-none select-none ${
+        zoomed ? "cursor-grab active:cursor-grabbing" : "cursor-zoom-in"
+      } ${className}`}
+      onMouseEnter={onHoverMove}
+      onMouseMove={onHoverMove}
+      onMouseLeave={() => setHover((z) => ({ ...z, active: false }))}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
     >
       <img
         src={src}
         alt={alt}
-        className="max-h-full max-w-full w-auto h-auto object-contain transition-opacity duration-150"
+        className="max-h-full max-w-full w-auto h-auto object-contain will-change-transform"
         style={{
-          opacity: zoom.active ? 0 : 1,
-          transformOrigin: `${zoom.x}% ${zoom.y}%`,
+          opacity: hover.active && !zoomed ? 0 : 1,
+          transform: `translate3d(${touch.x}px, ${touch.y}px, 0) scale(${touch.scale})`,
+          transition: dragRef.current || pinchRef.current ? "none" : "transform 160ms ease-out",
         }}
         draggable={false}
       />
-      {zoom.active && (
+      {hover.active && !zoomed && (
         <div
-          className="absolute inset-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none hidden md:block"
           style={{
             backgroundImage: `url(${src})`,
             backgroundRepeat: "no-repeat",
-            backgroundPosition: `${zoom.x}% ${zoom.y}%`,
-            backgroundSize: `${ZOOM * 100}%`,
+            backgroundPosition: `${hover.x}% ${hover.y}%`,
+            backgroundSize: `${HOVER_ZOOM * 100}%`,
           }}
           aria-hidden
         />
       )}
+      <div className="pointer-events-none absolute bottom-2 left-2 md:hidden rounded-full bg-black/55 px-2.5 py-1 text-[10px] text-white">
+        {zoomed ? "Drag to move · Double-tap to reset" : "Pinch or double-tap to zoom"}
+      </div>
     </div>
   );
 };
@@ -92,6 +218,7 @@ const BundleImageSwiper = ({ images, title, className = "h-[350px]", fallback = 
   const frame = (
     <div className={`relative ${className} bg-[#F8FAFC] rounded-lg overflow-hidden`}>
       <ZoomableImage
+        key={slides[currentIndex]}
         src={slides[currentIndex]}
         alt={slides.length === 1 ? title || "Bundle" : `${title || "Bundle"} ${currentIndex + 1}`}
       />
