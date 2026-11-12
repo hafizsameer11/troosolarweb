@@ -6,7 +6,7 @@ import SideBar from "../Component/SideBar";
 import TopNavbar from "../Component/TopNavbar";
 import { assets } from "../assets/data";
 import API, { BASE_URL } from "../config/api.config";
-import { ChevronLeft, ShoppingCart } from "lucide-react"; // ← chevron back
+import { ChevronLeft, ChevronRight, ShoppingCart } from "lucide-react"; // ← chevron back
 import Loading from "../Component/Loading";
 import ProductPromoBadges from "../Component/ProductPromoBadges";
 import { ContextApi } from "../Context/AppContext";
@@ -105,6 +105,53 @@ const getSpecValue = (specs, candidateKeys = []) => {
   return undefined;
 };
 
+const BundleImageSwiper = ({ images, title, className = "h-[350px]" }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const slides = Array.isArray(images) ? images.filter(Boolean) : [];
+
+  if (slides.length === 0) return null;
+
+  if (slides.length === 1) {
+    return (
+      <div className={`relative ${className} bg-[#F8FAFC] rounded-lg flex justify-center items-center overflow-hidden`}>
+        <img src={slides[0]} alt={title || "Bundle"} className="max-h-[80%] object-contain" />
+      </div>
+    );
+  }
+
+  const next = () => setCurrentIndex((p) => (p + 1) % slides.length);
+  const prev = () => setCurrentIndex((p) => (p - 1 + slides.length) % slides.length);
+
+  return (
+    <div className={`relative ${className} bg-[#F8FAFC] rounded-lg flex justify-center items-center overflow-hidden`}>
+      <img
+        src={slides[currentIndex]}
+        alt={`${title || "Bundle"} ${currentIndex + 1}`}
+        className="max-h-[80%] object-contain"
+      />
+      <button
+        type="button"
+        onClick={prev}
+        className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow-md"
+        aria-label="Previous image"
+      >
+        <ChevronLeft size={22} className="text-gray-700" />
+      </button>
+      <button
+        type="button"
+        onClick={next}
+        className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow-md"
+        aria-label="Next image"
+      >
+        <ChevronRight size={22} className="text-gray-700" />
+      </button>
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white px-3 py-1 rounded-full text-xs">
+        {currentIndex + 1} / {slides.length}
+      </div>
+    </div>
+  );
+};
+
 // Map API bundle -> props
 const mapBundleDetail = (b) => {
   if (!b) return null;
@@ -112,7 +159,23 @@ const mapBundleDetail = (b) => {
   const id = b.id;
   const title = b.title || `Bundle #${id}`;
   const label = b.bundle_type || "";
-  const image = (b.featured_image && toAbsolute(b.featured_image)) || (b.featured_image_url && toAbsolute(b.featured_image_url)) || null;
+  const featured =
+    (b.featured_image && toAbsolute(b.featured_image)) ||
+    (b.featured_image_url && toAbsolute(b.featured_image_url)) ||
+    null;
+  const galleryOnly = (Array.isArray(b.images) ? b.images : [])
+    .map((img) => toAbsolute(img?.image_url || img?.image || img))
+    .filter(Boolean);
+  const gallery = [];
+  const seen = new Set();
+  [featured, ...galleryOnly].forEach((src) => {
+    if (!src) return;
+    const key = String(src).trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    gallery.push(key);
+  });
+  const image = gallery[0] || null;
 
   const total = toNumber(b.total_price);
   const discount = toNumber(b.discount_price);
@@ -286,6 +349,7 @@ const mapBundleDetail = (b) => {
     oldPrice,
     discount: discountBadge,
     heroImage: image,
+    gallery,
     totalLoad,
     inverterRating,
     batteryCapacity: batteryCapacity !== "" ? String(batteryCapacity) : "",
@@ -755,31 +819,18 @@ const ProductBundle = () => {
               <div className="flex-1 min-w-0">
                 <div className="bg-white w-full border border-gray-200 rounded-xl mt-3 shadow-sm overflow-hidden">
                   {/* Image */}
-                  <div className="relative h-[350px] bg-[#F8FAFC] m-3 rounded-lg flex justify-center items-center overflow-hidden">
-                    {/* {productData.label && (
-                      <div className="absolute top-4 right-4 bg-[#800080] text-white text-xs px-3 py-1 rounded-full shadow">
-                        {productData.label}
-                      </div>
-                    )} */}
-                    {productData.heroImage ? (
-                      <img
-                        src={productData.heroImage}
-                        alt="Bundle"
-                        className="max-h-[80%] object-contain"
+                  <div className="m-3">
+                    {productData.gallery?.length ? (
+                      <BundleImageSwiper
+                        images={productData.gallery}
+                        title={productData.bundleTitle}
+                        className="h-[350px]"
                       />
                     ) : (
-                      <>
-                        <img
-                          className="w-[160px] h-[160px]"
-                          src={assets.inverter}
-                          alt="Inverter"
-                        />
-                        <img
-                          src={assets.solar}
-                          className="w-[171px] h-[171px] absolute right-40 bottom-24"
-                          alt="Solar"
-                        />
-                      </>
+                      <div className="relative h-[350px] bg-[#F8FAFC] rounded-lg flex justify-center items-center overflow-hidden">
+                        <img className="w-[160px] h-[160px]" src={assets.inverter} alt="Inverter" />
+                        <img src={assets.solar} className="w-[171px] h-[171px] absolute right-40 bottom-24" alt="Solar" />
+                      </div>
                     )}
                   </div>
 
@@ -1026,33 +1077,18 @@ const ProductBundle = () => {
               {/* Bundle card - aligned with BNPL/Buy Now flow */}
               <div className="mx-3 mb-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 {/* Image area */}
-                <div className="relative h-[200px] rounded-xl bg-[#F8FAFC] flex items-center justify-center overflow-hidden">
-                  {/* {productData.label && (
-                    <div className="absolute top-3 right-3 bg-[#800080] text-white text-[11px] px-3 py-[6px] rounded-full shadow">
-                      {productData.label}
-                    </div>
-                  )} */}
-                  {productData.heroImage ? (
-                    <img
-                      src={productData.heroImage}
-                      alt="Bundle"
-                      className="max-h-[80%] object-contain"
-                    />
-                  ) : (
-                    <>
-                      <img
-                        src={assets.inverter}
-                        alt="Inverter"
-                        className="w-[140px] h-[140px]"
-                      />
-                      <img
-                        src={assets.solar}
-                        alt="Solar"
-                        className="w-[150px] h-[150px] absolute right-10 bottom-6"
-                      />
-                    </>
-                  )}
-                </div>
+                {productData.gallery?.length ? (
+                  <BundleImageSwiper
+                    images={productData.gallery}
+                    title={productData.bundleTitle}
+                    className="h-[200px] rounded-xl"
+                  />
+                ) : (
+                  <div className="relative h-[200px] rounded-xl bg-[#F8FAFC] flex items-center justify-center overflow-hidden">
+                    <img src={assets.inverter} alt="Inverter" className="w-[140px] h-[140px]" />
+                    <img src={assets.solar} alt="Solar" className="w-[150px] h-[150px] absolute right-10 bottom-6" />
+                  </div>
+                )}
 
                 {/* Title + price block - aligned with BNPL/Buy Now flow */}
                 <div className="pt-3">
