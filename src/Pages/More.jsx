@@ -123,6 +123,7 @@ const sectionTitles = {
   myOrders: "My Orders",
   auditRequests: "Audit requests",
   transactionHistory: "Transaction History",
+  kycDetails: "KYC Details",
   creditScore: "Credit Score",
   referrals: "Referrals",
   support: "Support",
@@ -337,6 +338,14 @@ const More = () => {
                       isSelected={activeSection === "kycDetails"}
                     />
                   </div>
+                  <div onClick={() => setActiveSection("creditScore")}>
+                    <SidebarOption
+                      colorBg="bg-[#278E5B]"
+                      icon={TrendingUp}
+                      label="Credit Score"
+                      isSelected={activeSection === "creditScore"}
+                    />
+                  </div>
 
                   <div onClick={() => setActiveSection("referrals")}>
                     <SidebarOption
@@ -530,6 +539,26 @@ const More = () => {
                   </div>
                   <span className="text-sm font-medium text-gray-700">
                     Transaction History
+                  </span>
+                </div>
+                <ChevronRight className="text-gray-400" size={16} />
+              </div>
+
+              {/* KYC Details */}
+              <div
+                className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between cursor-pointer"
+                onClick={() => handleMobileSectionChange("kycDetails")}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#278E5B] rounded-full flex items-center justify-center overflow-hidden">
+                    {assets.kwc ? (
+                      <img src={assets.kwc} alt="" className="w-5 h-5 object-contain" />
+                    ) : (
+                      <FileText className="text-white" size={20} />
+                    )}
+                  </div>
+                  <span className="text-sm font-medium text-gray-700">
+                    KYC Details
                   </span>
                 </div>
                 <ChevronRight className="text-gray-400" size={16} />
