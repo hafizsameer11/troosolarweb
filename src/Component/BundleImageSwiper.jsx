@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BASE_URL } from "../config/api.config";
 
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, "");
+const ZOOM = 2.4;
 
 const toAbsolute = (path) => {
   if (!path) return "";
@@ -34,55 +35,97 @@ export const getBundleGalleryImages = (bundle, fallback = "") => {
   return gallery;
 };
 
+const ZoomableImage = ({ src, alt, className = "" }) => {
+  const wrapRef = useRef(null);
+  const [zoom, setZoom] = useState({ active: false, x: 50, y: 50 });
+
+  const onMove = (e) => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setZoom({ active: true, x, y });
+  };
+
+  return (
+    <div
+      ref={wrapRef}
+      className={`relative w-full h-full flex items-center justify-center overflow-hidden cursor-zoom-in ${className}`}
+      onMouseEnter={onMove}
+      onMouseMove={onMove}
+      onMouseLeave={() => setZoom((z) => ({ ...z, active: false }))}
+    >
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-full max-w-full w-auto h-auto object-contain transition-opacity duration-150"
+        style={{
+          opacity: zoom.active ? 0 : 1,
+          transformOrigin: `${zoom.x}% ${zoom.y}%`,
+        }}
+        draggable={false}
+      />
+      {zoom.active && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `url(${src})`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: `${zoom.x}% ${zoom.y}%`,
+            backgroundSize: `${ZOOM * 100}%`,
+          }}
+          aria-hidden
+        />
+      )}
+    </div>
+  );
+};
+
 const BundleImageSwiper = ({ images, title, className = "h-[350px]", fallback = "" }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const slides = (Array.isArray(images) ? images.filter(Boolean) : []).length
-    ? images.filter(Boolean)
-    : fallback
-      ? [fallback]
-      : [];
+  const filtered = Array.isArray(images) ? images.filter(Boolean) : [];
+  const slides = filtered.length ? filtered : fallback ? [fallback] : [];
 
   if (slides.length === 0) return null;
 
-  if (slides.length === 1) {
-    return (
-      <div className={`relative ${className} bg-[#F8FAFC] rounded-lg flex justify-center items-center overflow-hidden`}>
-        <img src={slides[0]} alt={title || "Bundle"} className="max-h-[80%] object-contain" />
-      </div>
-    );
-  }
+  const frame = (
+    <div className={`relative ${className} bg-[#F8FAFC] rounded-lg overflow-hidden`}>
+      <ZoomableImage
+        src={slides[currentIndex]}
+        alt={slides.length === 1 ? title || "Bundle" : `${title || "Bundle"} ${currentIndex + 1}`}
+      />
+      {slides.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setCurrentIndex((p) => (p - 1 + slides.length) % slides.length)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-white border border-gray-200 hover:bg-gray-50 rounded-full p-2 shadow-md"
+            aria-label="Previous image"
+          >
+            <ChevronLeft size={22} className="text-gray-700" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentIndex((p) => (p + 1) % slides.length)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-white border border-gray-200 hover:bg-gray-50 rounded-full p-2 shadow-md"
+            aria-label="Next image"
+          >
+            <ChevronRight size={22} className="text-gray-700" />
+          </button>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 bg-black/70 text-white px-3 py-1 rounded-full text-xs font-medium">
+            {currentIndex + 1} / {slides.length}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
-  const next = () => setCurrentIndex((p) => (p + 1) % slides.length);
-  const prev = () => setCurrentIndex((p) => (p - 1 + slides.length) % slides.length);
+  if (slides.length === 1) return frame;
 
   return (
     <div className="w-full">
-      <div className={`relative ${className} bg-[#F8FAFC] rounded-lg flex justify-center items-center overflow-hidden`}>
-        <img
-          src={slides[currentIndex]}
-          alt={`${title || "Bundle"} ${currentIndex + 1}`}
-          className="max-h-[80%] object-contain"
-        />
-        <button
-          type="button"
-          onClick={prev}
-          className="absolute left-2 top-1/2 -translate-y-1/2 bg-white border border-gray-200 hover:bg-gray-50 rounded-full p-2 shadow-md"
-          aria-label="Previous image"
-        >
-          <ChevronLeft size={22} className="text-gray-700" />
-        </button>
-        <button
-          type="button"
-          onClick={next}
-          className="absolute right-2 top-1/2 -translate-y-1/2 bg-white border border-gray-200 hover:bg-gray-50 rounded-full p-2 shadow-md"
-          aria-label="Next image"
-        >
-          <ChevronRight size={22} className="text-gray-700" />
-        </button>
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-xs font-medium">
-          {currentIndex + 1} / {slides.length}
-        </div>
-      </div>
+      {frame}
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
         {slides.map((src, idx) => (
           <button
