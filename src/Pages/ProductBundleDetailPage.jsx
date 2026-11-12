@@ -123,30 +123,47 @@ const BundleImageSwiper = ({ images, title, className = "h-[350px]" }) => {
   const prev = () => setCurrentIndex((p) => (p - 1 + slides.length) % slides.length);
 
   return (
-    <div className={`relative ${className} bg-[#F8FAFC] rounded-lg flex justify-center items-center overflow-hidden`}>
-      <img
-        src={slides[currentIndex]}
-        alt={`${title || "Bundle"} ${currentIndex + 1}`}
-        className="max-h-[80%] object-contain"
-      />
-      <button
-        type="button"
-        onClick={prev}
-        className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow-md"
-        aria-label="Previous image"
-      >
-        <ChevronLeft size={22} className="text-gray-700" />
-      </button>
-      <button
-        type="button"
-        onClick={next}
-        className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow-md"
-        aria-label="Next image"
-      >
-        <ChevronRight size={22} className="text-gray-700" />
-      </button>
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white px-3 py-1 rounded-full text-xs">
-        {currentIndex + 1} / {slides.length}
+    <div className="w-full">
+      <div className={`relative ${className} bg-[#F8FAFC] rounded-lg flex justify-center items-center overflow-hidden`}>
+        <img
+          src={slides[currentIndex]}
+          alt={`${title || "Bundle"} ${currentIndex + 1}`}
+          className="max-h-[80%] object-contain"
+        />
+        <button
+          type="button"
+          onClick={prev}
+          className="absolute left-2 top-1/2 -translate-y-1/2 bg-white border border-gray-200 hover:bg-gray-50 rounded-full p-2 shadow-md"
+          aria-label="Previous image"
+        >
+          <ChevronLeft size={22} className="text-gray-700" />
+        </button>
+        <button
+          type="button"
+          onClick={next}
+          className="absolute right-2 top-1/2 -translate-y-1/2 bg-white border border-gray-200 hover:bg-gray-50 rounded-full p-2 shadow-md"
+          aria-label="Next image"
+        >
+          <ChevronRight size={22} className="text-gray-700" />
+        </button>
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-xs font-medium">
+          {currentIndex + 1} / {slides.length}
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+        {slides.map((src, idx) => (
+          <button
+            key={`${src}-${idx}`}
+            type="button"
+            onClick={() => setCurrentIndex(idx)}
+            className={`shrink-0 h-16 w-16 rounded-md overflow-hidden border-2 bg-[#F8FAFC] ${
+              idx === currentIndex ? "border-[#0F3B7A]" : "border-transparent opacity-80 hover:opacity-100"
+            }`}
+            aria-label={`View image ${idx + 1}`}
+          >
+            <img src={src} alt="" className="h-full w-full object-contain" />
+          </button>
+        ))}
       </div>
     </div>
   );
