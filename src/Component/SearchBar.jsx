@@ -334,7 +334,8 @@ const SearchBar = ({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by name or capacity (e.g. 4kVA, 1.5)"
-          inputMode="decimal"
+          inputMode="search"
+          enterKeyHint="search"
           className="w-full px-2 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none"
           aria-label="Search products and bundles"
         />
